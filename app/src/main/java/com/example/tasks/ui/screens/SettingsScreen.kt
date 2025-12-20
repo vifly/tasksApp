@@ -1,5 +1,10 @@
 package com.example.tasks.ui.screens
 
+import android.app.Activity
+import android.content.Intent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +21,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,9 +29,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.tasks.ui.viewmodel.SettingsViewModel
 import com.example.tasks.ui.viewmodel.TaskViewModel
+import kotlinx.coroutines.flow.collectLatest
+import org.json.JSONArray
+import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +43,48 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
     val homeScreenTag by settingsViewModel.homeScreenTag.collectAsState()
     var showTagDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val tasks by taskViewModel.tasks.collectAsState()
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                val json = JSONArray()
+                tasks.forEach { task ->
+                    val jsonObject = JSONObject()
+                    jsonObject.put("content", task.content)
+                    jsonObject.put("tags", JSONArray(task.tags))
+                    jsonObject.put("createdAt", task.createdAt.time)
+                    jsonObject.put("updatedAt", task.updatedAt.time)
+                    json.put(jsonObject)
+                }
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(json.toString(4).toByteArray())
+                }
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val jsonString = inputStream.bufferedReader().use { it.readText() }
+                    taskViewModel.importTasks(jsonString)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        taskViewModel.toastMessage.collectLatest { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -77,6 +129,41 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
                     .padding(16.dp)
             ) {
                 Text("一键删除测试数据")
+            }
+
+            HorizontalDivider()
+
+            Button(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/json"
+                        putExtra(Intent.EXTRA_TITLE, "tasks.json")
+                    }
+                    exportLauncher.launch(intent)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text("导出")
+            }
+
+            HorizontalDivider()
+
+            Button(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/json"
+                    }
+                    importLauncher.launch(intent)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text("导入")
             }
         }
     }

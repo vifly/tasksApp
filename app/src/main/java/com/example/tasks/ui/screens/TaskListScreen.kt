@@ -1,12 +1,12 @@
 package com.example.tasks.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,7 +36,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,40 +45,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalViewConfiguration
-import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.tasks.data.Task
 import com.example.tasks.ui.viewmodel.TaskViewModel
 import org.burnoutcrew.reorderable.ReorderableItem
-import org.burnoutcrew.reorderable.ReorderableState
-import org.burnoutcrew.reorderable.detectReorderAfterLongPress
+import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
 import java.text.SimpleDateFormat
 import java.util.Locale
-
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun LazyItemScope.ReorderableItemCustom(
-    reorderableState: ReorderableState<*>,
-    key: Any?,
-    modifier: Modifier = Modifier,
-    index: Int? = null,
-    orientationLocked: Boolean = true,
-    content: @Composable BoxScope.(isDragging: Boolean) -> Unit,
-) = ReorderableItem(
-    reorderableState,
-    key,
-    modifier,
-    Modifier.animateItem(),
-    orientationLocked,
-    index,
-    content
-)
-
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -105,9 +80,14 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                 it.tags.any { tag -> tag.equals(searchQuery, ignoreCase = true) }
     }
 
-    val reorderableState = rememberReorderableLazyListState(onMove = { from, to ->
-        taskViewModel.onMove(from.index, to.index)
-    })
+    val reorderableState = rememberReorderableLazyListState(
+        onMove = { from, to ->
+            taskViewModel.onMove(from.index, to.index)
+        },
+        onDragEnd = { _, _ ->
+            taskViewModel.onDragEnd()
+        }
+    )
 
     Scaffold(
         topBar = {
@@ -151,19 +131,29 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(filteredTasks, key = { it.id }) { task ->
-                    ReorderableItemCustom(reorderableState, key = task.id) {
-                        val isSelected = selectedTasks.contains(task)
+                    val isDragging = reorderableState.draggingItemKey == task.id
+                    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "elevation")
+                    val isSelected = selectedTasks.contains(task)
+                    
+                    // We wrap in a Box to apply animateItem (replacement for animateItemPlacement)
+                    Box(
+                        modifier = Modifier
+                            .animateItem()
+                    ) {
                         TaskListItem(
                             task = task,
-                            isSelected = isSelected,
-                            dragHandleModifier = Modifier.detectReorderAfterLongPress(
-                                reorderableState
-                            ),
+                            isSelected = selectedTasks.contains(task),
+                            modifier = Modifier
+                                .shadow(elevation)
+                                .background(MaterialTheme.colorScheme.surface),
+                            dragHandleModifier = if (searchQuery.isEmpty()) {
+                                Modifier.detectReorder(reorderableState)
+                            } else {
+                                Modifier
+                            },
                             onClick = {
                                 if (isSelectionMode) {
-                                    if (isSelected) selectedTasks.remove(task) else selectedTasks.add(
-                                        task
-                                    )
+                                    if (isSelected) selectedTasks.remove(task) else selectedTasks.add(task)
                                 } else {
                                     navController.navigate("taskEdit/${task.id}")
                                 }
@@ -228,23 +218,15 @@ fun TaskListItem(
             .background(backgroundColor),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val viewConfiguration = LocalViewConfiguration.current
-        val newViewConfiguration = remember(viewConfiguration) {
-            object : ViewConfiguration by viewConfiguration {
-                override val longPressTimeoutMillis: Long = 200L
-            }
-        }
-        CompositionLocalProvider(LocalViewConfiguration provides newViewConfiguration) {
-            Box(
-                modifier = dragHandleModifier,
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Menu,
-                    contentDescription = "Drag to reorder",
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
+        Box(
+            modifier = dragHandleModifier,
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Menu,
+                contentDescription = "Drag to reorder",
+                modifier = Modifier.padding(16.dp)
+            )
         }
 
         // Clickable content area
@@ -255,7 +237,7 @@ fun TaskListItem(
                     onClick = onClick,
                     onLongClick = onLongClick
                 )
-                .padding(vertical = 8.dp), // Removed horizontal padding
+                .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (task.isPinned) {

@@ -5,9 +5,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.tasks.data.Task
 import com.example.tasks.data.db.TaskDataSource
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONException
 import java.util.Date
 import java.util.UUID
 
@@ -18,6 +23,9 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
 
     private val _allTags = MutableStateFlow<List<String>>(emptyList())
     val allTags: StateFlow<List<String>> = _allTags
+
+    private val _toastMessage = MutableSharedFlow<String>()
+    val toastMessage: SharedFlow<String> = _toastMessage.asSharedFlow()
 
     init {
         loadTasks()
@@ -86,6 +94,61 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
         }
     }
 
+    fun importTasks(jsonString: String) {
+        viewModelScope.launch {
+            try {
+                val jsonArray = JSONArray(jsonString)
+                val maxOrder = _tasks.value.maxOfOrNull { it.customSortOrder } ?: 0
+                val newTasks = mutableListOf<Task>()
+                var skippedCount = 0
+                for (i in 0 until jsonArray.length()) {
+                    val jsonObject = jsonArray.getJSONObject(i)
+
+                    if (!jsonObject.has("content") || !jsonObject.has("tags")) {
+                        skippedCount++
+                        continue
+                    }
+
+                    val content = jsonObject.getString("content")
+                    val tagsJsonArray = jsonObject.getJSONArray("tags")
+                    val tags = (0 until tagsJsonArray.length()).map { tagsJsonArray.getString(it) }
+                    val createdAt =
+                        if (jsonObject.has("createdAt")) Date(jsonObject.getLong("createdAt")) else Date()
+                    val updatedAt =
+                        if (jsonObject.has("updatedAt")) Date(jsonObject.getLong("updatedAt")) else Date()
+
+                    val task = Task(
+                        content = content,
+                        tags = tags,
+                        createdAt = createdAt,
+                        updatedAt = updatedAt,
+                        customSortOrder = maxOrder + newTasks.size + 1
+                    )
+                    newTasks.add(task)
+                }
+
+                if (newTasks.isEmpty() && skippedCount > 0) {
+                    _toastMessage.emit("导入失败，请检查文件格式")
+                    return@launch
+                }
+
+                newTasks.forEach { dataSource.addTask(it) }
+                loadTasks()
+
+                val importedCount = newTasks.size
+                val message = when {
+                    skippedCount > 0 -> "成功导入 $importedCount 个任务，跳过 $skippedCount 个格式不正确的任务"
+                    importedCount > 0 -> "成功导入 $importedCount 个任务"
+                    else -> "未导入任何任务"
+                }
+                _toastMessage.emit(message)
+            } catch (e: JSONException) {
+                _toastMessage.emit("导入失败，请检查文件格式")
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun addTestData() {
         viewModelScope.launch {
             val maxOrder = _tasks.value.maxOfOrNull { it.customSortOrder } ?: 0
@@ -126,15 +189,24 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
     }
 
     fun onMove(from: Int, to: Int) {
-        viewModelScope.launch {
-            val updatedTasks = _tasks.value.toMutableList()
+        val updatedTasks = _tasks.value.toMutableList()
+        if (from in updatedTasks.indices && to in updatedTasks.indices) {
             updatedTasks.add(to, updatedTasks.removeAt(from))
-            for ((index, task) in updatedTasks.withIndex()) {
-                if (task.customSortOrder != updatedTasks.size - index) {
-                    dataSource.updateTask(task.copy(customSortOrder = updatedTasks.size - index))
+            _tasks.value = updatedTasks
+        }
+    }
+
+    fun onDragEnd() {
+        viewModelScope.launch {
+            val updatedTasks = _tasks.value
+            val total = updatedTasks.size
+            // Update sort order for all tasks to match current list order
+            updatedTasks.forEachIndexed { index, task ->
+                val newSortOrder = total - index
+                if (task.customSortOrder != newSortOrder) {
+                    dataSource.updateTask(task.copy(customSortOrder = newSortOrder))
                 }
             }
-            loadTasks()
         }
     }
 
