@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.Date
+import java.util.UUID
 
 class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
 
@@ -72,7 +73,8 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
     }
 
     private fun List<Task>.sortedTasks(): List<Task> {
-        return this.sortedWith(compareByDescending<Task> { it.isPinned }.thenByDescending { it.customSortOrder }.thenByDescending { it.createdAt })
+        return this.sortedWith(compareByDescending<Task> { it.isPinned }.thenByDescending { it.customSortOrder }
+            .thenByDescending { it.createdAt })
     }
 
     fun addTask(task: Task) {
@@ -81,6 +83,31 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
             val newTask = task.copy(customSortOrder = maxOrder + 1)
             dataSource.addTask(newTask)
             loadTasks()
+        }
+    }
+
+    fun addTestData() {
+        viewModelScope.launch {
+            val maxOrder = _tasks.value.maxOfOrNull { it.customSortOrder } ?: 0
+            for (i in 1..5) {
+                val task = Task(
+                    content = "Test task ${UUID.randomUUID()}",
+                    tags = listOf("test"),
+                    customSortOrder = maxOrder + i
+                )
+                dataSource.addTask(task)
+            }
+            loadTasks()
+        }
+    }
+
+    fun deleteTestData() {
+        viewModelScope.launch {
+            val tasksToDelete = _tasks.value.filter { it.tags == listOf("test") }
+            if (tasksToDelete.isNotEmpty()) {
+                dataSource.deleteTasks(tasksToDelete)
+                loadTasks()
+            }
         }
     }
 

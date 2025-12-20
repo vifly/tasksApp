@@ -47,6 +47,11 @@ fun AppNavigation(navController: NavHostController, modifier: Modifier = Modifie
                 taskViewModel = taskViewModel
             )
         }
-        composable("settings") { SettingsScreen(settingsViewModel = settingsViewModel) }
+        composable("settings") {
+            SettingsScreen(
+                settingsViewModel = settingsViewModel,
+                taskViewModel = taskViewModel
+            )
+        }
     }
 }

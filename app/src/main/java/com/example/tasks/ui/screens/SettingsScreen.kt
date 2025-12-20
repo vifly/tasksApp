@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -23,12 +25,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.tasks.ui.viewmodel.SettingsViewModel
+import com.example.tasks.ui.viewmodel.TaskViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(settingsViewModel: SettingsViewModel) {
+fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskViewModel) {
     val homeScreenTag by settingsViewModel.homeScreenTag.collectAsState()
     var showTagDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -52,6 +56,28 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel) {
                     Text(homeScreenTag, style = MaterialTheme.typography.bodyMedium)
                 }
             }
+
+            HorizontalDivider()
+
+            Button(
+                onClick = { taskViewModel.addTestData() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text("一键添加测试数据")
+            }
+
+            HorizontalDivider()
+
+            Button(
+                onClick = { showDeleteConfirmDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text("一键删除测试数据")
+            }
         }
     }
 
@@ -62,6 +88,29 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel) {
             onConfirm = { newTag ->
                 settingsViewModel.updateHomeScreenTag(newTag)
                 showTagDialog = false
+            }
+        )
+    }
+
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text("确认删除") },
+            text = { Text("确定要删除所有只包含“test”标签的任务吗？") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        taskViewModel.deleteTestData()
+                        showDeleteConfirmDialog = false
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("取消")
+                }
             }
         )
     }
