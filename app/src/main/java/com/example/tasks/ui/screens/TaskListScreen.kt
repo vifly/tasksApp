@@ -1,10 +1,14 @@
 package com.example.tasks.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,12 +49,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.tasks.data.Task
 import com.example.tasks.ui.viewmodel.TaskViewModel
-import org.burnoutcrew.reorderable.ReorderableItem
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.burnoutcrew.reorderable.ReorderableLazyListState
 import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
@@ -89,6 +101,13 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
         }
     )
 
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(reorderableState.draggingItemKey) {
+        if (reorderableState.draggingItemKey != null) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+
     Scaffold(
         topBar = {
             if (isSelectionMode) {
@@ -122,51 +141,78 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                     .fillMaxWidth()
                     .padding(8.dp)
             )
-            LazyColumn(
-                state = reorderableState.listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .reorderable(reorderableState)
-                    .padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(filteredTasks, key = { it.id }) { task ->
-                    val isDragging = reorderableState.draggingItemKey == task.id
-                    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "elevation")
-                    val isSelected = selectedTasks.contains(task)
-                    
-                    // We wrap in a Box to apply animateItem (replacement for animateItemPlacement)
-                    Box(
-                        modifier = Modifier
-                            .animateItem()
-                    ) {
-                        TaskListItem(
-                            task = task,
-                            isSelected = selectedTasks.contains(task),
-                            modifier = Modifier
-                                .shadow(elevation)
-                                .background(MaterialTheme.colorScheme.surface),
-                            dragHandleModifier = if (searchQuery.isEmpty()) {
-                                Modifier.detectReorder(reorderableState)
-                            } else {
-                                Modifier
-                            },
-                            onClick = {
-                                if (isSelectionMode) {
-                                    if (isSelected) selectedTasks.remove(task) else selectedTasks.add(task)
-                                } else {
-                                    navController.navigate("taskEdit/${task.id}")
-                                }
-                            },
-                            onLongClick = {
-                                if (!isSelectionMode) {
-                                    selectedTasks.add(task)
-                                }
-                            },
-                            onPinClick = { taskViewModel.togglePin(task) },
-                            onDetailsClick = { showDetailsDialog = task },
-                            onDeleteClick = { showDeleteDialog = listOf(task) }
+
+            AutoScrollBox(reorderableState = reorderableState) {
+                LazyColumn(
+                    state = reorderableState.listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .reorderable(reorderableState)
+                        .padding(horizontal = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(filteredTasks, key = { it.id }) { task ->
+                        val isDragging = reorderableState.draggingItemKey == task.id
+                        val elevation by animateDpAsState(
+                            if (isDragging) 8.dp else 0.dp,
+                            label = "elevation",
+                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
                         )
+                        val scale by animateFloatAsState(
+                            if (isDragging) 1.05f else 1f,
+                            label = "scale",
+                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                        )
+                        val isSelected = selectedTasks.contains(task)
+
+                        // We wrap in a Box to apply animateItem (replacement for animateItemPlacement)
+                        // Use a softer spring for smoother reordering
+                        Box(
+                            modifier = Modifier
+                                .then(
+                                    if (isDragging) {
+                                        Modifier
+                                    } else {
+                                        Modifier.animateItem(
+                                            placementSpec = spring(
+                                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            )
+                                        )
+                                    }
+                                )
+                                .scale(scale)
+                        ) {
+                            TaskListItem(
+                                task = task,
+                                isSelected = isSelected,
+                                modifier = Modifier
+                                    .shadow(elevation)
+                                    .background(MaterialTheme.colorScheme.surface),
+                                dragHandleModifier = if (searchQuery.isEmpty()) {
+                                    Modifier.detectReorder(reorderableState)
+                                } else {
+                                    Modifier
+                                },
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        if (isSelected) selectedTasks.remove(task) else selectedTasks.add(
+                                            task
+                                        )
+                                    } else {
+                                        navController.navigate("taskEdit/${task.id}")
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!isSelectionMode) {
+                                        selectedTasks.add(task)
+                                    }
+                                },
+                                onPinClick = { taskViewModel.togglePin(task) },
+                                onDetailsClick = { showDetailsDialog = task },
+                                onDeleteClick = { showDeleteDialog = listOf(task) }
+                            )
+                        }
                     }
                 }
             }
@@ -190,6 +236,60 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
             task = showDetailsDialog!!,
             onDismiss = { showDetailsDialog = null }
         )
+    }
+}
+
+@Composable
+fun AutoScrollBox(
+    reorderableState: ReorderableLazyListState,
+    content: @Composable () -> Unit
+) {
+    var dragPosition by remember { mutableStateOf(Offset.Zero) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull()
+                        if (change != null && change.pressed) {
+                            dragPosition = change.position
+                        } else {
+                            dragPosition = Offset.Zero
+                        }
+                    }
+                }
+            }
+    ) {
+        content()
+
+        // Auto-scroll logic
+        LaunchedEffect(reorderableState.draggingItemKey) {
+            if (reorderableState.draggingItemKey == null) return@LaunchedEffect
+
+            launch {
+                while (reorderableState.draggingItemKey != null) {
+                    val viewPortHeight = reorderableState.listState.layoutInfo.viewportSize.height
+                    if (viewPortHeight > 0 && dragPosition != Offset.Zero) {
+                        val topThreshold = viewPortHeight * 0.15f
+                        val bottomThreshold = viewPortHeight * 0.85f
+
+                        val scrollSpeed = when {
+                            dragPosition.y < topThreshold -> -15f // Slightly slower for stability
+                            dragPosition.y > bottomThreshold -> 15f
+                            else -> 0f
+                        }
+
+                        if (scrollSpeed != 0f) {
+                            reorderableState.listState.scrollBy(scrollSpeed)
+                        }
+                    }
+                    delay(16) // ~60fps check
+                }
+            }
+        }
     }
 }
 
