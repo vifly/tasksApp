@@ -191,6 +191,10 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
     fun onMove(from: Int, to: Int) {
         val updatedTasks = _tasks.value.toMutableList()
         if (from in updatedTasks.indices && to in updatedTasks.indices) {
+            // Prevent moving pinned tasks or moving unpinned tasks into pinned slots
+            if (updatedTasks[from].isPinned || updatedTasks[to].isPinned) {
+                return
+            }
             updatedTasks.add(to, updatedTasks.removeAt(from))
             _tasks.value = updatedTasks
         }

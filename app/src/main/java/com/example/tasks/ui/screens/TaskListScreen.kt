@@ -189,12 +189,11 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                                 modifier = Modifier
                                     .shadow(elevation)
                                     .background(MaterialTheme.colorScheme.surface),
-                                dragHandleModifier = if (searchQuery.isEmpty()) {
+                                dragHandleModifier = if (searchQuery.isEmpty() && !task.isPinned) {
                                     Modifier.detectReorder(reorderableState)
                                 } else {
                                     Modifier
-                                },
-                                onClick = {
+                                }, onClick = {
                                     if (isSelectionMode) {
                                         if (isSelected) selectedTasks.remove(task) else selectedTasks.add(
                                             task
@@ -322,11 +321,15 @@ fun TaskListItem(
             modifier = dragHandleModifier,
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Filled.Menu,
-                contentDescription = "Drag to reorder",
-                modifier = Modifier.padding(16.dp)
-            )
+            if (!task.isPinned) {
+                Icon(
+                    imageVector = Icons.Filled.Menu,
+                    contentDescription = "Drag to reorder",
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                Spacer(modifier = Modifier.padding(24.dp))
+            }
         }
 
         // Clickable content area
