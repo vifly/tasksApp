@@ -12,6 +12,8 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -31,6 +32,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,7 +71,11 @@ import org.burnoutcrew.reorderable.reorderable
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalFoundationApi::class,
+    ExperimentalLayoutApi::class
+)
 @Composable
 fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
     LaunchedEffect(Unit) {
@@ -77,10 +83,12 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
     }
 
     val tasks by taskViewModel.tasks.collectAsState()
+    val allTags by taskViewModel.allTags.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf<List<Task>?>(null) }
     var showDetailsDialog by remember { mutableStateOf<Task?>(null) }
     val selectedTasks = remember { mutableStateListOf<Task>() }
+    val selectedTags = remember { mutableStateListOf<String>() }
     val isSelectionMode = selectedTasks.isNotEmpty()
 
     BackHandler(enabled = isSelectionMode) {
@@ -88,8 +96,10 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
     }
 
     val filteredTasks = tasks.filter {
-        it.content.contains(searchQuery, ignoreCase = true) ||
-                it.tags.any { tag -> tag.equals(searchQuery, ignoreCase = true) }
+        val matchesSearch = it.content.contains(searchQuery, ignoreCase = true)
+        val matchesTags =
+            if (selectedTags.isEmpty()) true else selectedTags.all { tag -> tag in it.tags }
+        matchesSearch && matchesTags
     }
 
     val reorderableState = rememberReorderableLazyListState(
@@ -136,11 +146,35 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
             TextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                label = { Text("Search or filter by tag") },
+                label = { Text("Search task content") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)
             )
+
+            // Tag Filters
+            if (allTags.isNotEmpty()) {
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    allTags.forEach { tag ->
+                        FilterChip(
+                            selected = tag in selectedTags,
+                            onClick = {
+                                if (tag in selectedTags) {
+                                    selectedTags.remove(tag)
+                                } else {
+                                    selectedTags.add(tag)
+                                }
+                            },
+                            label = { Text(tag) }
+                        )
+                    }
+                }
+            }
 
             AutoScrollBox(reorderableState = reorderableState) {
                 LazyColumn(
@@ -151,8 +185,8 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                         .padding(horizontal = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(filteredTasks, key = { it.id }) { task ->
-                        val isDragging = reorderableState.draggingItemKey == task.id
+                    items(filteredTasks, key = { it.id }) {
+                        val isDragging = reorderableState.draggingItemKey == it.id
                         val elevation by animateDpAsState(
                             if (isDragging) 8.dp else 0.dp,
                             label = "elevation",
@@ -163,7 +197,7 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                             label = "scale",
                             animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
                         )
-                        val isSelected = selectedTasks.contains(task)
+                        val isSelected = selectedTasks.contains(it)
 
                         // We wrap in a Box to apply animateItem (replacement for animateItemPlacement)
                         // Use a softer spring for smoother reordering
@@ -184,32 +218,32 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                                 .scale(scale)
                         ) {
                             TaskListItem(
-                                task = task,
+                                task = it,
                                 isSelected = isSelected,
                                 modifier = Modifier
                                     .shadow(elevation)
                                     .background(MaterialTheme.colorScheme.surface),
-                                dragHandleModifier = if (searchQuery.isEmpty() && !task.isPinned) {
+                                dragHandleModifier = if (searchQuery.isEmpty() && selectedTags.isEmpty() && !it.isPinned) {
                                     Modifier.detectReorder(reorderableState)
                                 } else {
                                     Modifier
                                 }, onClick = {
                                     if (isSelectionMode) {
-                                        if (isSelected) selectedTasks.remove(task) else selectedTasks.add(
-                                            task
+                                        if (isSelected) selectedTasks.remove(it) else selectedTasks.add(
+                                            it
                                         )
                                     } else {
-                                        navController.navigate("taskEdit/${task.id}")
+                                        navController.navigate("taskEdit/${it.id}")
                                     }
                                 },
                                 onLongClick = {
                                     if (!isSelectionMode) {
-                                        selectedTasks.add(task)
+                                        selectedTasks.add(it)
                                     }
                                 },
-                                onPinClick = { taskViewModel.togglePin(task) },
-                                onDetailsClick = { showDetailsDialog = task },
-                                onDeleteClick = { showDeleteDialog = listOf(task) }
+                                onPinClick = { taskViewModel.togglePin(it) },
+                                onDetailsClick = { showDetailsDialog = it },
+                                onDeleteClick = { showDeleteDialog = listOf(it) }
                             )
                         }
                     }
