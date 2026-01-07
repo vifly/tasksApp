@@ -2,13 +2,19 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("org.mozilla.rust-android-gradle.rust-android") version "0.9.6"
+}
+
+cargo {
+    module = "../rust"
+    libname = "sync"
+    targets = listOf("arm64")
 }
 
 android {
     namespace = "com.example.tasks"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 36
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "com.example.tasks"
@@ -33,15 +39,26 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+        }
     }
     buildFeatures {
         compose = true
     }
+    sourceSets {
+        getByName("main") {
+            java.srcDirs(
+                "src/main/java",
+                "${project.layout.buildDirectory.get().asFile}/generated/source/uniffi"
+            )
+        }
+    }
 }
 
 dependencies {
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -61,4 +78,45 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+abstract class GenerateUniffiBindingsTask : DefaultTask() {
+    @get:Inject
+    protected abstract val execOperations: ExecOperations
+
+    @TaskAction
+    fun generate() {
+        val buildDir = project.layout.buildDirectory.get().asFile
+        val rustDir = File(project.projectDir, "../rust")
+        // rust-android plugin puts libs in rustJniLibs/android/arch
+        val libPath = File(buildDir, "rustJniLibs/android/arm64-v8a/libsync.so").absolutePath
+
+        execOperations.exec {
+            workingDir = rustDir
+            commandLine = listOf(
+                "cargo",
+                "run",
+                "--features",
+                "uniffi/cli",
+                "--bin",
+                "uniffi-bindgen",
+                "--",
+                "generate",
+                "--library",
+                libPath,
+                "--language",
+                "kotlin",
+                "--out-dir",
+                File(buildDir, "generated/source/uniffi").absolutePath
+            )
+        }
+    }
+}
+
+tasks.register<GenerateUniffiBindingsTask>("generateUniffiBindings") {
+    dependsOn("cargoBuild")
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn("generateUniffiBindings")
 }
