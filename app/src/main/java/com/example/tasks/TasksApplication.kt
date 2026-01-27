@@ -9,6 +9,8 @@ class TasksApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Load the Rust library for UniFFI
+        System.loadLibrary("sync")
         taskDataSource = TaskDataSource(this)
     }
 }

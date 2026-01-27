@@ -1,0 +1,22 @@
+[package]
+name = "sync"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "sync"
+
+[dependencies]
+yrs = "0.25.0"
+uniffi = { version = "0.30.0", features = ["cli"] }
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+uniffi = { version = "0.30.0", features = ["build"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/uniffi-bindgen.rs"

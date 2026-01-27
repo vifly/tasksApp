@@ -17,6 +17,7 @@ class TaskDataSource(context: Context) {
             while (moveToNext()) {
                 val task = Task(
                     id = getLong(getColumnIndexOrThrow("id")),
+                    uuid = getString(getColumnIndexOrThrow("uuid")),
                     content = getString(getColumnIndexOrThrow("content")),
                     tags = getString(getColumnIndexOrThrow("tags")).split(",").map { it.trim() }
                         .filter { it.isNotEmpty() },
@@ -36,6 +37,7 @@ class TaskDataSource(context: Context) {
     fun addTask(task: Task): Long {
         val db = dbHelper.writableDatabase
         val values = ContentValues().apply {
+            put("uuid", task.uuid)
             put("content", task.content)
             put("tags", task.tags.joinToString(","))
             put("created_at", task.createdAt.time)
@@ -51,6 +53,7 @@ class TaskDataSource(context: Context) {
     fun updateTask(task: Task) {
         val db = dbHelper.writableDatabase
         val values = ContentValues().apply {
+            put("uuid", task.uuid)
             put("content", task.content)
             put("tags", task.tags.joinToString(","))
             put("updated_at", Date().time)

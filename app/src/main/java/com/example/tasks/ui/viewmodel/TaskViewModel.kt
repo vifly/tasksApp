@@ -1,5 +1,6 @@
 package com.example.tasks.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONException
+import uniffi.sync.TaskDocument
 import java.util.Date
 import java.util.UUID
 
@@ -29,6 +31,30 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
 
     init {
         loadTasks()
+        testRustIntegration()
+    }
+
+    private fun testRustIntegration() {
+        try {
+            val doc = TaskDocument()
+            // Test JSON format matching TaskEntry struct
+            val testJson = """
+                {
+                    "uuid": "${UUID.randomUUID()}",
+                    "content": "Rust integration working!",
+                    "is_pinned": true,
+                    "created_at": ${System.currentTimeMillis()},
+                    "updated_at": ${System.currentTimeMillis()},
+                    "tags": ["rust", "integration"]
+                }
+            """.trimIndent()
+
+            doc.addTask(testJson)
+            val json = doc.getAllTasksJson()
+            Log.d("TaskViewModel", "Rust Content (JSON): $json")
+        } catch (e: Exception) {
+            Log.e("TaskViewModel", "Rust integration failed", e)
+        }
     }
 
     fun loadTasks() {
@@ -110,6 +136,9 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
                     }
 
                     val content = jsonObject.getString("content")
+                    val uuid =
+                        if (jsonObject.has("uuid")) jsonObject.getString("uuid") else UUID.randomUUID()
+                            .toString()
                     val tagsJsonArray = jsonObject.getJSONArray("tags")
                     val tags = (0 until tagsJsonArray.length()).map { tagsJsonArray.getString(it) }
                     val createdAt =
@@ -118,6 +147,7 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
                         if (jsonObject.has("updatedAt")) Date(jsonObject.getLong("updatedAt")) else Date()
 
                     val task = Task(
+                        uuid = uuid,
                         content = content,
                         tags = tags,
                         createdAt = createdAt,
