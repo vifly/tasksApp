@@ -1,11 +1,10 @@
 package com.example.tasks.ui.viewmodel
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.tasks.data.Task
-import com.example.tasks.data.db.TaskDataSource
+import com.example.tasks.data.repositories.TaskRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -14,11 +13,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONException
-import uniffi.sync.TaskDocument
 import java.util.Date
 import java.util.UUID
 
-class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
+class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
 
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
     val tasks: StateFlow<List<Task>> = _tasks
@@ -30,46 +28,38 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
     val toastMessage: SharedFlow<String> = _toastMessage.asSharedFlow()
 
     init {
-        loadTasks()
-        testRustIntegration()
-    }
+        viewModelScope.launch {
+            // Check if we need initial data
+            val currentTasks = repository.getAllTasks()
+            if (currentTasks.isEmpty()) {
+                addInitialData()
+            }
 
-    private fun testRustIntegration() {
-        try {
-            val doc = TaskDocument()
-            // Test JSON format matching TaskEntry struct
-            val testJson = """
-                {
-                    "uuid": "${UUID.randomUUID()}",
-                    "content": "Rust integration working!",
-                    "is_pinned": true,
-                    "created_at": ${System.currentTimeMillis()},
-                    "updated_at": ${System.currentTimeMillis()},
-                    "tags": ["rust", "integration"]
-                }
-            """.trimIndent()
+            // Initialize Rust state (Shadow Copy)
+            repository.initialize()
 
-            doc.addTask(testJson)
-            val json = doc.getAllTasksJson()
-            Log.d("TaskViewModel", "Rust Content (JSON): $json")
-        } catch (e: Exception) {
-            Log.e("TaskViewModel", "Rust integration failed", e)
+            loadTasks()
         }
     }
 
     fun loadTasks() {
         viewModelScope.launch {
-            var currentTasks = dataSource.getAllTasks()
-            if (currentTasks.isEmpty()) {
-                addInitialData()
-                currentTasks = dataSource.getAllTasks()
-            }
+            val currentTasks = repository.getAllTasks()
             _tasks.value = currentTasks.sortedTasks()
             _allTags.value = currentTasks.flatMap { it.tags }.distinct().sorted()
         }
     }
 
-    private fun addInitialData() {
+    // Force sync from Rust (useful for debug or manual refresh)
+    fun syncRustToLocal() {
+        viewModelScope.launch {
+            if (repository.syncRustToLocal()) {
+                loadTasks()
+            }
+        }
+    }
+
+    private suspend fun addInitialData() {
         val initialTasks = listOf(
             Task(
                 id = 1,
@@ -103,7 +93,8 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
                 createdAt = Date(System.currentTimeMillis() - 500000)
             ),
         ).mapIndexed { index, task -> task.copy(customSortOrder = 5 - index) }
-        initialTasks.forEach { dataSource.addTask(it) }
+
+        initialTasks.forEach { repository.addTask(it) }
     }
 
     private fun List<Task>.sortedTasks(): List<Task> {
@@ -115,7 +106,7 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
         viewModelScope.launch {
             val maxOrder = _tasks.value.maxOfOrNull { it.customSortOrder } ?: 0
             val newTask = task.copy(customSortOrder = maxOrder + 1)
-            dataSource.addTask(newTask)
+            repository.addTask(newTask)
             loadTasks()
         }
     }
@@ -162,7 +153,7 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
                     return@launch
                 }
 
-                newTasks.forEach { dataSource.addTask(it) }
+                newTasks.forEach { repository.addTask(it) }
                 loadTasks()
 
                 val importedCount = newTasks.size
@@ -188,7 +179,7 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
                     tags = listOf("test"),
                     customSortOrder = maxOrder + i
                 )
-                dataSource.addTask(task)
+                repository.addTask(task)
             }
             loadTasks()
         }
@@ -198,7 +189,7 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
         viewModelScope.launch {
             val tasksToDelete = _tasks.value.filter { it.tags == listOf("test") }
             if (tasksToDelete.isNotEmpty()) {
-                dataSource.deleteTasks(tasksToDelete)
+                repository.deleteTasks(tasksToDelete)
                 loadTasks()
             }
         }
@@ -206,14 +197,14 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
 
     fun deleteTasks(tasks: List<Task>) {
         viewModelScope.launch {
-            dataSource.deleteTasks(tasks)
+            repository.deleteTasks(tasks)
             loadTasks()
         }
     }
 
     fun updateTask(task: Task) {
         viewModelScope.launch {
-            dataSource.updateTask(task)
+            repository.updateTask(task)
             loadTasks()
         }
     }
@@ -238,7 +229,7 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
             updatedTasks.forEachIndexed { index, task ->
                 val newSortOrder = total - index
                 if (task.customSortOrder != newSortOrder) {
-                    dataSource.updateTask(task.copy(customSortOrder = newSortOrder))
+                    repository.updateTask(task.copy(customSortOrder = newSortOrder))
                 }
             }
         }
@@ -248,26 +239,22 @@ class TaskViewModel(private val dataSource: TaskDataSource) : ViewModel() {
         viewModelScope.launch {
             val isPinningNewTask = !task.isPinned
             if (isPinningNewTask) {
-                // Unpin any other task that is currently pinned.
-                _tasks.value.find { it.isPinned && it.id != task.id }?.let {
-                    dataSource.updateTask(it.copy(isPinned = false))
+                // Find currently pinned task to unpin
+                _tasks.value.find { it.isPinned && it.uuid != task.uuid }?.let {
+                    repository.updateTask(it.copy(isPinned = false))
                 }
             }
-
-            // Toggle the pin status of the given task.
-            val updatedTask = task.copy(isPinned = !task.isPinned)
-            dataSource.updateTask(updatedTask)
-
+            repository.updateTask(task.copy(isPinned = !task.isPinned))
             loadTasks()
         }
     }
 }
 
-class TaskViewModelFactory(private val dataSource: TaskDataSource) : ViewModelProvider.Factory {
+class TaskViewModelFactory(private val repository: TaskRepository) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TaskViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return TaskViewModel(dataSource) as T
+            return TaskViewModel(repository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

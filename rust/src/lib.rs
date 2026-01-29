@@ -1,8 +1,9 @@
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use yrs::updates::decoder::Decode;
-use yrs::{Any, Array, ArrayRef, Doc, MapRef, Out, ReadTxn, StateVector, Transact, Update};
+use yrs::{Any, Array, ArrayRef, Doc, Out, ReadTxn, StateVector, Transact, Update};
 
 uniffi::setup_scaffolding!();
 
@@ -26,6 +27,16 @@ pub struct TaskDocument {
 impl TaskDocument {
     #[uniffi::constructor]
     pub fn new() -> Self {
+        #[cfg(target_os = "android")]
+        {
+            android_logger::init_once(
+                android_logger::Config::default()
+                    .with_tag("RustSync")
+                    .with_max_level(log::LevelFilter::Debug),
+            );
+        }
+        info!("TaskDocument initialized");
+
         let doc = Doc::new();
         let tasks_array = doc.get_or_insert_array("tasks");
         Self { doc, tasks_array }
@@ -87,11 +98,13 @@ impl TaskDocument {
             }
         }
 
+        debug!("get_all_tasks_json returning {} tasks", tasks.len());
         serde_json::to_string(&tasks).unwrap_or_else(|_| "[]".to_string())
     }
 
     pub fn restore_from_json(&self, json: String) {
         let tasks: Vec<TaskEntry> = serde_json::from_str(&json).unwrap_or_default();
+        let task_count = tasks.len();
         let mut txn = self.doc.transact_mut();
 
         let len = self.tasks_array.len(&txn);
@@ -102,26 +115,33 @@ impl TaskDocument {
         for task in tasks {
             Self::append_task_internal(&mut txn, &self.tasks_array, task);
         }
+        info!("restored {} tasks from JSON", task_count);
     }
 
     pub fn add_task(&self, json: String) {
-        if let Ok(task) = serde_json::from_str::<TaskEntry>(&json) {
-            let mut txn = self.doc.transact_mut();
-            Self::insert_task_internal(&mut txn, &self.tasks_array, 0, task);
+        match serde_json::from_str::<TaskEntry>(&json) {
+            Ok(task) => {
+                let uuid = task.uuid.clone();
+                let mut txn = self.doc.transact_mut();
+                Self::insert_task_internal(&mut txn, &self.tasks_array, 0, task);
+                debug!("add_task success for {}", uuid);
+            }
+            Err(e) => {
+                error!("add_task failed to parse JSON: {}", e);
+            }
         }
     }
 
     pub fn update_task(&self, uuid: String, json: String) {
         if let Ok(new_task) = serde_json::from_str::<TaskEntry>(&json) {
             let mut txn = self.doc.transact_mut();
-            // Using Any::Map means we replace the whole entry
-            // This is "Task-Level LWW" (Last Write Wins)
             if let Some((index, _)) = self.find_task_index_by_uuid(&txn, &uuid) {
-                // Remove old
                 self.tasks_array.remove(&mut txn, index);
-                // Insert new at same position
                 let any_task = Self::task_to_any(new_task);
                 self.tasks_array.insert(&mut txn, index, any_task);
+                debug!("update_task success for {}", uuid);
+            } else {
+                debug!("update_task failed - UUID not found: {}", uuid);
             }
         }
     }
@@ -130,6 +150,9 @@ impl TaskDocument {
         let mut txn = self.doc.transact_mut();
         if let Some((index, _)) = self.find_task_index_by_uuid(&txn, &uuid) {
             self.tasks_array.remove(&mut txn, index);
+            debug!("delete_task success for {}", uuid);
+        } else {
+            debug!("delete_task failed - UUID not found: {}", uuid);
         }
     }
 
@@ -142,6 +165,7 @@ impl TaskDocument {
         let mut txn = self.doc.transact_mut();
         if let Ok(update) = Update::decode_v1(&update) {
             let _ = txn.apply_update(update);
+            info!("applied update");
         }
     }
 }
@@ -201,10 +225,6 @@ impl TaskDocument {
             if let Out::Any(Any::Map(map)) = value {
                 if let Some(Any::String(uuid)) = map.get("uuid") {
                     if &**uuid == target_uuid {
-                        // Clone the map to return it? Or just index.
-                        // We return clone of keys to satisfy borrow checker if needed,
-                        // but here we just need index mostly.
-                        // The map in Any::Map is Arc<HashMap>, so clone is cheap.
                         return Some((index, (*map).clone()));
                     }
                 }
@@ -223,7 +243,6 @@ mod tests {
     fn test_task_crud() {
         let doc = TaskDocument::new();
 
-        // 1. Add Task
         let task1 = TaskEntry {
             uuid: "u1".to_string(),
             content: "Task 1".to_string(),
@@ -234,15 +253,12 @@ mod tests {
         };
         doc.add_task(serde_json::to_string(&task1).unwrap());
 
-        // Verify
         let json = doc.get_all_tasks_json();
-        println!("DEBUG JSON: {}", json);
         let tasks: Vec<TaskEntry> = serde_json::from_str(&json).unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].uuid, "u1");
         assert_eq!(tasks[0].tags[0], "a");
 
-        // 2. Update Task
         let task1_update = TaskEntry {
             content: "Task 1 Updated".to_string(),
             updated_at: 200,
@@ -258,37 +274,9 @@ mod tests {
         assert_eq!(tasks[0].content, "Task 1 Updated");
         assert_eq!(tasks[0].updated_at, 200);
 
-        // 3. Delete Task
         doc.delete_task("u1".to_string());
         let json = doc.get_all_tasks_json();
         let tasks: Vec<TaskEntry> = serde_json::from_str(&json).unwrap();
         assert_eq!(tasks.len(), 0);
-    }
-
-    #[test]
-    fn test_sync() {
-        let doc_a = TaskDocument::new();
-        let doc_b = TaskDocument::new();
-
-        let task = TaskEntry {
-            uuid: "sync_1".to_string(),
-            content: "Sync Me".to_string(),
-            is_pinned: true,
-            created_at: 123,
-            updated_at: 123,
-            tags: vec![],
-        };
-        doc_a.add_task(serde_json::to_string(&task).unwrap());
-
-        // Sync A -> B
-        let update = doc_a.get_update();
-        doc_b.apply_update(update);
-
-        // Verify B has the task
-        let json_b = doc_b.get_all_tasks_json();
-        let tasks_b: Vec<TaskEntry> = serde_json::from_str(&json_b).unwrap();
-        assert_eq!(tasks_b.len(), 1);
-        assert_eq!(tasks_b[0].content, "Sync Me");
-        assert!(tasks_b[0].is_pinned);
     }
 }

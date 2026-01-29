@@ -20,8 +20,9 @@ import com.example.tasks.ui.viewmodel.TaskViewModelFactory
 @Composable
 fun AppNavigation(navController: NavHostController, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val app = context.applicationContext as TasksApplication
     val taskViewModel: TaskViewModel = viewModel(
-        factory = TaskViewModelFactory((context.applicationContext as TasksApplication).taskDataSource)
+        factory = TaskViewModelFactory(app.taskRepository)
     )
     val settingsViewModel: SettingsViewModel =
         viewModel(factory = SettingsViewModelFactory(context))
