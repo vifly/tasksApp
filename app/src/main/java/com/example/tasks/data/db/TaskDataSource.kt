@@ -53,20 +53,19 @@ class TaskDataSource(context: Context) {
     fun updateTask(task: Task) {
         val db = dbHelper.writableDatabase
         val values = ContentValues().apply {
-            put("uuid", task.uuid)
             put("content", task.content)
             put("tags", task.tags.joinToString(","))
             put("updated_at", Date().time)
             put("is_pinned", if (task.isPinned) 1 else 0)
             put("custom_sort_order", task.customSortOrder)
         }
-        db.update("tasks", values, "id = ?", arrayOf(task.id.toString()))
+        db.update("tasks", values, "uuid = ?", arrayOf(task.uuid))
         db.close()
     }
 
     fun deleteTask(task: Task) {
         val db = dbHelper.writableDatabase
-        db.delete("tasks", "id = ?", arrayOf(task.id.toString()))
+        db.delete("tasks", "uuid = ?", arrayOf(task.uuid))
         db.close()
     }
 
