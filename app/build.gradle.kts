@@ -49,10 +49,7 @@ android {
     }
     sourceSets {
         getByName("main") {
-            java.srcDirs(
-                "src/main/java",
-                "${project.layout.buildDirectory.get().asFile}/generated/source/uniffi"
-            )
+            java.srcDir(project.layout.buildDirectory.dir("generated/source/uniffi"))
         }
     }
 }
@@ -84,39 +81,38 @@ abstract class GenerateUniffiBindingsTask : DefaultTask() {
     @get:Inject
     protected abstract val execOperations: ExecOperations
 
+    @get:InputDirectory
+    abstract val rustJniLibsDir: DirectoryProperty
+
+    @get:InputDirectory
+    abstract val rustProjectDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outDir: DirectoryProperty
+
     @TaskAction
     fun generate() {
-        val buildDir = project.layout.buildDirectory.get().asFile
-        val rustDir = File(project.projectDir, "../rust")
-        // rust-android plugin puts libs in rustJniLibs/android/arch
-        val libPath = File(buildDir, "rustJniLibs/android/arm64-v8a/libsync.so").absolutePath
+        val libPath = rustJniLibsDir.file("android/arm64-v8a/libsync.so").get().asFile.absolutePath
 
         execOperations.exec {
-            workingDir = rustDir
+            workingDir = rustProjectDir.get().asFile
             commandLine = listOf(
-                "cargo",
-                "run",
-                "--features",
-                "uniffi/cli",
-                "--bin",
-                "uniffi-bindgen",
-                "--",
-                "generate",
-                "--library",
-                libPath,
-                "--language",
-                "kotlin",
-                "--out-dir",
-                File(buildDir, "generated/source/uniffi").absolutePath
+                "cargo", "run", "--features", "uniffi/cli", "--bin", "uniffi-bindgen", "--",
+                "generate", "--library", libPath,
+                "--language", "kotlin", "--out-dir", outDir.get().asFile.absolutePath
             )
         }
     }
 }
 
-tasks.register<GenerateUniffiBindingsTask>("generateUniffiBindings") {
+val generateUniffiBindings = tasks.register<GenerateUniffiBindingsTask>("generateUniffiBindings") {
     dependsOn("cargoBuild")
+
+    rustJniLibsDir.set(project.layout.buildDirectory.dir("rustJniLibs"))
+    rustProjectDir.set(project.layout.projectDirectory.dir("../rust"))
+    outDir.set(project.layout.buildDirectory.dir("generated/source/uniffi"))
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    dependsOn("generateUniffiBindings")
+    dependsOn(generateUniffiBindings)
 }
