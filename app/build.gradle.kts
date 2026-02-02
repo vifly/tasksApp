@@ -55,6 +55,7 @@ android {
 }
 
 dependencies {
+    implementation("com.squareup.okhttp3:okhttp:5.3.2")
     implementation("net.java.dev.jna:jna:5.18.1@aar")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

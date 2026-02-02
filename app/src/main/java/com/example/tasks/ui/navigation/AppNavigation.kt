@@ -25,7 +25,7 @@ fun AppNavigation(navController: NavHostController, modifier: Modifier = Modifie
         factory = TaskViewModelFactory(app.taskRepository)
     )
     val settingsViewModel: SettingsViewModel =
-        viewModel(factory = SettingsViewModelFactory(context))
+        viewModel(factory = SettingsViewModelFactory(app.settingsRepository))
 
     NavHost(navController = navController, startDestination = "home", modifier = modifier) {
         composable("home") {

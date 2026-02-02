@@ -8,13 +8,19 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.tasks.ui.viewmodel.SettingsViewModel
 import com.example.tasks.ui.viewmodel.TaskViewModel
@@ -42,6 +50,7 @@ import org.json.JSONObject
 fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskViewModel) {
     val homeScreenTag by settingsViewModel.homeScreenTag.collectAsState()
     var showTagDialog by remember { mutableStateOf(false) }
+    var showWebDavDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val tasks by taskViewModel.tasks.collectAsState()
@@ -54,6 +63,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
                 val json = JSONArray()
                 tasks.forEach { task ->
                     val jsonObject = JSONObject()
+                    jsonObject.put("uuid", task.uuid)
                     jsonObject.put("content", task.content)
                     jsonObject.put("tags", JSONArray(task.tags))
                     jsonObject.put("createdAt", task.createdAt.time)
@@ -85,6 +95,12 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
+    
+    LaunchedEffect(Unit) {
+        settingsViewModel.toastMessage.collectLatest { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -95,27 +111,32 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showTagDialog = true }
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("主页任务筛选标签", style = MaterialTheme.typography.titleLarge)
-                    Text(homeScreenTag, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
+            // --- Settings List Items ---
+            
+            // WebDAV Config Item
+            SettingItem(
+                title = "WebDAV 同步配置",
+                subtitle = "配置服务器地址、用户名及密码",
+                onClick = { showWebDavDialog = true }
+            )
 
             HorizontalDivider()
 
+            // Home Tag Item
+            SettingItem(
+                title = "主页任务筛选标签",
+                subtitle = homeScreenTag,
+                onClick = { showTagDialog = true }
+            )
+
+            HorizontalDivider()
+
+            // Test Data Action
             Button(
                 onClick = { taskViewModel.addTestData() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
             ) {
                 Text("一键添加测试数据")
             }
@@ -124,9 +145,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
 
             Button(
                 onClick = { showDeleteConfirmDialog = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
             ) {
                 Text("一键删除测试数据")
             }
@@ -142,11 +161,9 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
                     }
                     exportLauncher.launch(intent)
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
             ) {
-                Text("导出")
+                Text("导出 JSON")
             }
 
             HorizontalDivider()
@@ -159,13 +176,19 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
                     }
                     importLauncher.launch(intent)
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
             ) {
-                Text("导入")
+                Text("导入 JSON")
             }
         }
+    }
+
+    // Dialogs
+    if (showWebDavDialog) {
+        WebDavConfigDialog(
+            viewModel = settingsViewModel,
+            onDismiss = { showWebDavDialog = false }
+        )
     }
 
     if (showTagDialog) {
@@ -201,6 +224,90 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
             }
         )
     }
+}
+
+@Composable
+private fun SettingItem(title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun WebDavConfigDialog(
+    viewModel: SettingsViewModel,
+    onDismiss: () -> Unit
+) {
+    val serverUrl by viewModel.serverUrl.collectAsState()
+    val username by viewModel.username.collectAsState()
+    val password by viewModel.password.collectAsState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("WebDAV 服务器配置") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = serverUrl,
+                    onValueChange = { viewModel.serverUrl.value = it },
+                    label = { Text("服务器 URL") },
+                    placeholder = { Text("https://example.com/webdav/") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { viewModel.username.value = it },
+                    label = { Text("用户名") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { viewModel.password.value = it },
+                    label = { Text("密码") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = { viewModel.testConnection() },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("测试连接")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    viewModel.saveSettings()
+                    onDismiss()
+                }
+            ) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 @Composable
