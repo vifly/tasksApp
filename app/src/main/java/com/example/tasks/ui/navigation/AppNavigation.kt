@@ -21,38 +21,35 @@ import com.example.tasks.ui.viewmodel.TaskViewModelFactory
 fun AppNavigation(navController: NavHostController, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val app = context.applicationContext as TasksApplication
-    val taskViewModel: TaskViewModel = viewModel(
-        factory = TaskViewModelFactory(app.taskRepository)
-    )
-    val settingsViewModel: SettingsViewModel =
-        viewModel(factory = SettingsViewModelFactory(app.settingsRepository))
 
-    NavHost(navController = navController, startDestination = "home", modifier = modifier) {
+    val taskViewModel: TaskViewModel = viewModel(
+        factory = TaskViewModelFactory(app.taskRepository, app.syncScheduler, app.taskImportService)
+    )
+
+    val settingsViewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModelFactory(app.settingsRepository, app.syncScheduler)
+    )
+
+    NavHost(
+        navController = navController,
+        startDestination = "home",
+        modifier = modifier
+    ) {
         composable("home") {
-            HomeScreen(
-                taskViewModel = taskViewModel,
-                settingsViewModel = settingsViewModel
-            )
+            HomeScreen(taskViewModel, settingsViewModel)
         }
-        composable("taskList") {
-            TaskListScreen(
-                navController = navController,
-                taskViewModel = taskViewModel
-            )
+        composable("tasks") {
+            TaskListScreen(navController, taskViewModel)
         }
-        composable("taskEdit/{taskId}") { backStackEntry ->
+        composable("add_task") {
+            TaskEditScreen(null, navController, taskViewModel)
+        }
+        composable("edit_task/{taskId}") { backStackEntry ->
             val taskId = backStackEntry.arguments?.getString("taskId")
-            TaskEditScreen(
-                taskId = taskId,
-                navController = navController,
-                taskViewModel = taskViewModel
-            )
+            TaskEditScreen(taskId, navController, taskViewModel)
         }
         composable("settings") {
-            SettingsScreen(
-                settingsViewModel = settingsViewModel,
-                taskViewModel = taskViewModel
-            )
+            SettingsScreen(settingsViewModel, taskViewModel)
         }
     }
 }

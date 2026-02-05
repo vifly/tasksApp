@@ -63,7 +63,7 @@ fun TaskEditScreen(taskId: String?, navController: NavController, taskViewModel:
     val redoStack = remember { mutableStateListOf<TaskEditState>() }
 
     LaunchedEffect(key1 = taskViewModel.tasks, key2 = taskId) {
-        if (taskId == "new") {
+        if (taskId == "new" || taskId == null) {
             isNewTask = true
             val newTask = Task(
                 id = System.currentTimeMillis(),

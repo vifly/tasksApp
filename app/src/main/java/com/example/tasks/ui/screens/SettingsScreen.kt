@@ -22,6 +22,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -32,6 +34,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,9 +52,9 @@ import org.json.JSONObject
 @Composable
 fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskViewModel) {
     val homeScreenTag by settingsViewModel.homeScreenTag.collectAsState()
-    var showTagDialog by remember { mutableStateOf(false) }
-    var showWebDavDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showTagDialog by rememberSaveable { mutableStateOf(false) }
+    var showWebDavDialog by rememberSaveable { mutableStateOf(false) }
+    var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val tasks by taskViewModel.tasks.collectAsState()
 
@@ -95,7 +98,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
-    
+
     LaunchedEffect(Unit) {
         settingsViewModel.toastMessage.collectLatest { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -113,18 +116,14 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {
-            // --- Settings List Items ---
-            
-            // WebDAV Config Item
             SettingItem(
                 title = "WebDAV 同步配置",
-                subtitle = "配置服务器地址、用户名及密码",
+                subtitle = "配置服务器及自动同步频率",
                 onClick = { showWebDavDialog = true }
             )
 
             HorizontalDivider()
 
-            // Home Tag Item
             SettingItem(
                 title = "主页任务筛选标签",
                 subtitle = homeScreenTag,
@@ -133,10 +132,11 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
 
             HorizontalDivider()
 
-            // Test Data Action
             Button(
                 onClick = { taskViewModel.addTestData() },
-                modifier = Modifier.fillMaxWidth().padding(16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             ) {
                 Text("一键添加测试数据")
             }
@@ -145,7 +145,9 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
 
             Button(
                 onClick = { showDeleteConfirmDialog = true },
-                modifier = Modifier.fillMaxWidth().padding(16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             ) {
                 Text("一键删除测试数据")
             }
@@ -161,7 +163,9 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
                     }
                     exportLauncher.launch(intent)
                 },
-                modifier = Modifier.fillMaxWidth().padding(16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             ) {
                 Text("导出 JSON")
             }
@@ -176,14 +180,15 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
                     }
                     importLauncher.launch(intent)
                 },
-                modifier = Modifier.fillMaxWidth().padding(16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             ) {
                 Text("导入 JSON")
             }
         }
     }
 
-    // Dialogs
     if (showWebDavDialog) {
         WebDavConfigDialog(
             viewModel = settingsViewModel,
@@ -247,18 +252,21 @@ private fun WebDavConfigDialog(
     viewModel: SettingsViewModel,
     onDismiss: () -> Unit
 ) {
-    val serverUrl by viewModel.serverUrl.collectAsState()
-    val username by viewModel.username.collectAsState()
-    val password by viewModel.password.collectAsState()
+    // Local temporary state for editing
+    var tempServerUrl by remember { mutableStateOf(viewModel.serverUrl.value) }
+    var tempUsername by remember { mutableStateOf(viewModel.username.value) }
+    var tempPassword by remember { mutableStateOf(viewModel.password.value) }
+    var tempAutoSync by remember { mutableStateOf(viewModel.autoSyncEnabled.value) }
+    var tempInterval by remember { mutableStateOf(viewModel.syncIntervalMinutes.value) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("WebDAV 服务器配置") },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
-                    value = serverUrl,
-                    onValueChange = { viewModel.serverUrl.value = it },
+                    value = tempServerUrl,
+                    onValueChange = { tempServerUrl = it },
                     label = { Text("服务器 URL") },
                     placeholder = { Text("https://example.com/webdav/") },
                     modifier = Modifier.fillMaxWidth(),
@@ -267,25 +275,55 @@ private fun WebDavConfigDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = username,
-                    onValueChange = { viewModel.username.value = it },
+                    value = tempUsername,
+                    onValueChange = { tempUsername = it },
                     label = { Text("用户名") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = password,
-                    onValueChange = { viewModel.password.value = it },
+                    value = tempPassword,
+                    onValueChange = { tempPassword = it },
                     label = { Text("密码") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
                 )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("开启自动后台同步", modifier = Modifier.weight(1f))
+                    Switch(checked = tempAutoSync, onCheckedChange = { tempAutoSync = it })
+                }
+
+                if (tempAutoSync) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "同步间隔: $tempInterval 分钟",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Slider(
+                        value = tempInterval.toFloat(),
+                        onValueChange = { tempInterval = it.toLong() },
+                        valueRange = 15f..1440f,
+                        steps = 10
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = { viewModel.testConnection() },
+                    onClick = {
+                        // Update VM values temporarily for the test call
+                        viewModel.serverUrl.value = tempServerUrl
+                        viewModel.username.value = tempUsername
+                        viewModel.password.value = tempPassword
+                        viewModel.testConnection()
+                    },
                     modifier = Modifier.align(Alignment.End)
                 ) {
                     Text("测试连接")
@@ -295,6 +333,12 @@ private fun WebDavConfigDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    // Commit local state to ViewModel and Save
+                    viewModel.serverUrl.value = tempServerUrl
+                    viewModel.username.value = tempUsername
+                    viewModel.password.value = tempPassword
+                    viewModel.autoSyncEnabled.value = tempAutoSync
+                    viewModel.syncIntervalMinutes.value = tempInterval
                     viewModel.saveSettings()
                     onDismiss()
                 }

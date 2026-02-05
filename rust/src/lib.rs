@@ -123,8 +123,19 @@ impl TaskDocument {
             Ok(task) => {
                 let uuid = task.uuid.clone();
                 let mut txn = self.doc.transact_mut();
-                Self::insert_task_internal(&mut txn, &self.tasks_array, 0, task);
-                debug!("add_task success for {}", uuid);
+
+                // Check if task with this UUID already exists
+                if let Some((index, _)) = self.find_task_index_by_uuid(&txn, &uuid) {
+                    info!("add_task: UUID {} already exists, treating as update", uuid);
+                    // Remove old and insert new at the same index to update
+                    self.tasks_array.remove(&mut txn, index);
+                    let any_task = Self::task_to_any(task);
+                    self.tasks_array.insert(&mut txn, index, any_task);
+                } else {
+                    // Insert new at the beginning
+                    Self::insert_task_internal(&mut txn, &self.tasks_array, 0, task);
+                    debug!("add_task success for {}", uuid);
+                }
             }
             Err(e) => {
                 error!("add_task failed to parse JSON: {}", e);

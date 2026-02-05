@@ -68,6 +68,8 @@ dependencies {
     implementation("org.burnoutcrew.composereorderable:reorderable:0.9.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.navigation:navigation-compose:2.9.6")
+    implementation("androidx.work:work-runtime-ktx:2.11.1")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.compose.material.icons)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -1,9 +1,13 @@
 package com.example.tasks
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -21,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -28,8 +33,18 @@ import com.example.tasks.ui.navigation.AppNavigation
 import com.example.tasks.ui.theme.TasksTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        // Handle result if needed
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        checkAndRequestNotificationPermission()
+
         enableEdgeToEdge()
         setContent {
             TasksTheme {
@@ -71,9 +86,9 @@ class MainActivity : ComponentActivity() {
                                         )
                                     },
                                     label = { Text("Task List") },
-                                    selected = currentRoute == "taskList",
+                                    selected = currentRoute == "tasks",
                                     onClick = {
-                                        navController.navigate("taskList") {
+                                        navController.navigate("tasks") {
                                             popUpTo(navController.graph.findStartDestination().id) {
                                                 saveState = true
                                             }
@@ -104,8 +119,8 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         floatingActionButton = {
-                            if (currentRoute == "taskList") {
-                                FloatingActionButton(onClick = { navController.navigate("taskEdit/new") }) {
+                            if (currentRoute == "tasks") {
+                                FloatingActionButton(onClick = { navController.navigate("add_task") }) {
                                     Icon(Icons.Default.Add, contentDescription = "Add Task")
                                 }
                             }
@@ -117,6 +132,22 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
+        }
+    }
+
+    private fun checkAndRequestNotificationPermission() {
+        // For Android 13+ (API 33+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val hasPermission = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+
+            // Ask every time if not granted. 
+            // System handles "Don't ask again" state automatically.
+            if (!hasPermission) {
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }

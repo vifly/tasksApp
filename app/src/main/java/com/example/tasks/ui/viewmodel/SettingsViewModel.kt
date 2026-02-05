@@ -3,9 +3,9 @@ package com.example.tasks.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.tasks.TasksApplication
-import com.example.tasks.data.network.WebDavClient
+import com.example.tasks.data.services.WebDavClient
 import com.example.tasks.data.preferences.SettingsRepository
+import com.example.tasks.data.sync.SyncScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +14,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
-class SettingsViewModel(private val repository: SettingsRepository) : ViewModel() {
+class SettingsViewModel(
+    private val repository: SettingsRepository,
+    private val syncScheduler: SyncScheduler
+) : ViewModel() {
 
     private val _homeScreenTag = MutableStateFlow(repository.homeScreenTag)
     val homeScreenTag: StateFlow<String> = _homeScreenTag
@@ -22,10 +25,11 @@ class SettingsViewModel(private val repository: SettingsRepository) : ViewModel(
     private val _toastMessage = MutableSharedFlow<String>()
     val toastMessage: SharedFlow<String> = _toastMessage.asSharedFlow()
 
-    // Temporary state for UI, initialized from Repository
     val serverUrl = MutableStateFlow(repository.serverUrl)
     val username = MutableStateFlow(repository.username)
     val password = MutableStateFlow(repository.password)
+    val autoSyncEnabled = MutableStateFlow(repository.autoSyncEnabled)
+    val syncIntervalMinutes = MutableStateFlow(repository.syncIntervalMinutes)
 
     fun updateHomeScreenTag(newTag: String) {
         repository.homeScreenTag = newTag
@@ -36,7 +40,12 @@ class SettingsViewModel(private val repository: SettingsRepository) : ViewModel(
         repository.serverUrl = serverUrl.value
         repository.username = username.value
         repository.password = password.value
-        viewModelScope.launch { _toastMessage.emit("Settings saved") }
+        repository.autoSyncEnabled = autoSyncEnabled.value
+        repository.syncIntervalMinutes = syncIntervalMinutes.value
+
+        syncScheduler.updateSchedule()
+
+        viewModelScope.launch { _toastMessage.emit("设置已保存") }
     }
 
     fun testConnection() {
@@ -45,7 +54,7 @@ class SettingsViewModel(private val repository: SettingsRepository) : ViewModel(
         val pass = password.value
 
         if (url.isBlank()) {
-            viewModelScope.launch { _toastMessage.emit("Please enter Server URL") }
+            viewModelScope.launch { _toastMessage.emit("请输入服务器 URL") }
             return
         }
 
@@ -53,28 +62,30 @@ class SettingsViewModel(private val repository: SettingsRepository) : ViewModel(
             try {
                 val client = WebDavClient(url, user, pass)
                 if (client.checkConnection()) {
-                    _toastMessage.emit("Connection Successful!")
+                    _toastMessage.emit("连接成功！")
                 } else {
-                    // Try to create directory if it doesn't exist
-                    _toastMessage.emit("Target not found, attempting to create...")
+                    _toastMessage.emit("目标未找到，尝试创建目录...")
                     if (client.createDirectory()) {
-                        _toastMessage.emit("Directory created & Connection Successful!")
+                        _toastMessage.emit("目录已创建，连接成功！")
                     } else {
-                        _toastMessage.emit("Connection Failed: Verify URL/Auth")
+                        _toastMessage.emit("连接失败：请检查 URL 或认证信息")
                     }
                 }
             } catch (e: Exception) {
-                _toastMessage.emit("Error: ${e.message}")
+                _toastMessage.emit("错误: ${e.message}")
             }
         }
     }
 }
 
-class SettingsViewModelFactory(private val repository: SettingsRepository) : ViewModelProvider.Factory {
+class SettingsViewModelFactory(
+    private val repository: SettingsRepository,
+    private val syncScheduler: SyncScheduler
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return SettingsViewModel(repository) as T
+            return SettingsViewModel(repository, syncScheduler) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

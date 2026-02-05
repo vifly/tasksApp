@@ -1,5 +1,6 @@
 package com.example.tasks.ui.screens
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -58,12 +60,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
 import com.example.tasks.data.Task
 import com.example.tasks.ui.viewmodel.TaskViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.burnoutcrew.reorderable.ReorderableLazyListState
 import org.burnoutcrew.reorderable.detectReorder
@@ -79,8 +84,11 @@ import java.util.Locale
 )
 @Composable
 fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
+    val context = LocalContext.current
     LaunchedEffect(Unit) {
-        taskViewModel.loadTasks()
+        taskViewModel.toastMessage.collectLatest { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
     }
 
     val tasks by taskViewModel.tasks.collectAsState()
@@ -139,7 +147,14 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                     }
                 )
             } else {
-                TopAppBar(title = { Text("Tasks") })
+                TopAppBar(
+                    title = { Text("Tasks") },
+                    actions = {
+                        IconButton(onClick = { taskViewModel.sync() }) {
+                            Icon(Icons.Default.Sync, contentDescription = "Sync")
+                        }
+                    }
+                )
             }
         }
     ) { paddingValues ->
@@ -188,9 +203,9 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                 ) {
                     items(
                         items = filteredTasks,
-                        key = { it.id }
+                        key = { it.uuid }
                     ) { task ->
-                        val isDragging = reorderableState.draggingItemKey == task.id
+                        val isDragging = reorderableState.draggingItemKey == task.uuid
                         val elevation by animateDpAsState(
                             if (isDragging) 8.dp else 0.dp,
                             label = "elevation",
@@ -203,8 +218,6 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                         )
                         val isSelected = selectedTasks.contains(task)
 
-                        // We wrap in a Box to apply animateItem (replacement for animateItemPlacement)
-                        // Use a softer spring for smoother reordering
                         Box(
                             modifier = Modifier
                                 .then(
@@ -220,6 +233,7 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                                     }
                                 )
                                 .scale(scale)
+                                .zIndex(if (isDragging) 1f else 0f)
                         ) {
                             TaskListItem(
                                 task = task,
@@ -238,7 +252,7 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                                             task
                                         )
                                     } else {
-                                        navController.navigate("taskEdit/${task.id}")
+                                        navController.navigate("edit_task/${task.id}")
                                     }
                                 },
                                 onLongClick = {
@@ -371,7 +385,6 @@ fun TaskListItem(
             }
         }
 
-        // Clickable content area
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -395,7 +408,6 @@ fun TaskListItem(
             )
         }
 
-        // More options menu
         Box(modifier = Modifier.padding(end = 16.dp)) {
             IconButton(onClick = { showMenu = true }) {
                 Icon(Icons.Default.MoreVert, contentDescription = "More options")
