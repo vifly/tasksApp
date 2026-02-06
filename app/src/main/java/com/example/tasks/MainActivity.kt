@@ -11,11 +11,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -72,7 +68,7 @@ class MainActivity : ComponentActivity() {
                                 NavigationBarItem(
                                     icon = {
                                         Icon(
-                                            Icons.Default.Home,
+                                            painter = painterResource(id = R.drawable.home),
                                             contentDescription = "Home"
                                         )
                                     },
@@ -91,11 +87,11 @@ class MainActivity : ComponentActivity() {
                                 NavigationBarItem(
                                     icon = {
                                         Icon(
-                                            Icons.AutoMirrored.Filled.List,
-                                            contentDescription = "Task List"
+                                            painter = painterResource(id = R.drawable.list),
+                                            contentDescription = "Tasks"
                                         )
                                     },
-                                    label = { Text("Task List") },
+                                    label = { Text("Tasks") },
                                     selected = currentRoute == "tasks",
                                     onClick = {
                                         navController.navigate("tasks") {
@@ -110,7 +106,7 @@ class MainActivity : ComponentActivity() {
                                 NavigationBarItem(
                                     icon = {
                                         Icon(
-                                            Icons.Default.Settings,
+                                            painter = painterResource(id = R.drawable.settings),
                                             contentDescription = "Settings"
                                         )
                                     },
@@ -131,7 +127,10 @@ class MainActivity : ComponentActivity() {
                         floatingActionButton = {
                             if (currentRoute == "tasks") {
                                 FloatingActionButton(onClick = { navController.navigate("add_task") }) {
-                                    Icon(Icons.Default.Add, contentDescription = "Add Task")
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.add),
+                                        contentDescription = "Add Task"
+                                    )
                                 }
                             }
                         }

@@ -21,15 +21,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -51,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,9 +58,11 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
+import com.example.tasks.R
 import com.example.tasks.data.Task
 import com.example.tasks.ui.viewmodel.TaskViewModel
 import kotlinx.coroutines.delay
@@ -93,7 +91,7 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
 
     val tasks by taskViewModel.tasks.collectAsState()
     val allTags by taskViewModel.allTags.collectAsState()
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf<List<Task>?>(null) }
     var showDetailsDialog by remember { mutableStateOf<Task?>(null) }
     val selectedTasks = remember { mutableStateListOf<Task>() }
@@ -135,14 +133,17 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                     navigationIcon = {
                         IconButton(onClick = { selectedTasks.clear() }) {
                             Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
+                                painter = painterResource(id = R.drawable.arrow_back),
                                 contentDescription = "Clear selection"
                             )
                         }
                     },
                     actions = {
                         IconButton(onClick = { showDeleteDialog = selectedTasks.toList() }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete selected tasks")
+                            Icon(
+                                painter = painterResource(id = R.drawable.delete),
+                                contentDescription = "Delete selected tasks"
+                            )
                         }
                     }
                 )
@@ -151,7 +152,10 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                     title = { Text("Tasks") },
                     actions = {
                         IconButton(onClick = { taskViewModel.sync() }) {
-                            Icon(Icons.Default.Sync, contentDescription = "Sync")
+                            Icon(
+                                painter = painterResource(id = R.drawable.sync),
+                                contentDescription = "Sync"
+                            )
                         }
                     }
                 )
@@ -370,18 +374,25 @@ fun TaskListItem(
             .background(backgroundColor),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Shared leading column for perfect alignment
         Box(
-            modifier = dragHandleModifier,
+            modifier = dragHandleModifier.width(48.dp),
             contentAlignment = Alignment.Center
         ) {
-            if (!task.isPinned) {
+            if (task.isPinned) {
                 Icon(
-                    imageVector = Icons.Filled.Menu,
-                    contentDescription = "Drag to reorder",
-                    modifier = Modifier.padding(16.dp)
+                    painter = painterResource(id = R.drawable.keep),
+                    contentDescription = "Pinned",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
             } else {
-                Spacer(modifier = Modifier.padding(24.dp))
+                Icon(
+                    painter = painterResource(id = R.drawable.drag_handle),
+                    contentDescription = "Drag handle",
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                )
             }
         }
 
@@ -392,25 +403,21 @@ fun TaskListItem(
                     onClick = onClick,
                     onLongClick = onLongClick
                 )
-                .padding(vertical = 8.dp),
+                .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (task.isPinned) {
-                Icon(
-                    Icons.Default.Star,
-                    contentDescription = "Pinned",
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-            }
             Text(
                 text = task.content,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
         Box(modifier = Modifier.padding(end = 16.dp)) {
             IconButton(onClick = { showMenu = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                Icon(
+                    painter = painterResource(id = R.drawable.more_vert),
+                    contentDescription = "More options"
+                )
             }
             DropdownMenu(
                 expanded = showMenu,
@@ -468,20 +475,16 @@ fun DeleteConfirmationDialog(
 @Composable
 fun TaskDetailsDialog(task: Task, onDismiss: () -> Unit) {
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-    val wordCount = task.content.split("\\s+".toRegex()).count { it.isNotBlank() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Task Details") },
         text = {
             Column {
-                Text(text = "Content: ${task.content}")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(text = "Created: ${dateFormat.format(task.createdAt)}")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(text = "Last Updated: ${dateFormat.format(task.updatedAt)}")
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = "Word Count: $wordCount")
             }
         },
         confirmButton = {

@@ -9,11 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.sharp.ArrowBack
-import androidx.compose.material.icons.automirrored.sharp.ArrowForward
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -35,8 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.tasks.R
 import com.example.tasks.data.Task
 import com.example.tasks.ui.viewmodel.TaskViewModel
 import java.util.Date
@@ -151,7 +148,10 @@ fun TaskEditScreen(taskId: String?, navController: NavController, taskViewModel:
                     title = { Text(if (isNewTask) "New Task" else "Edit Task") },
                     navigationIcon = {
                         IconButton(onClick = onBackPress) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Icon(
+                                painter = painterResource(id = R.drawable.arrow_back),
+                                contentDescription = "Back"
+                            )
                         }
                     },
                     actions = {
@@ -164,7 +164,10 @@ fun TaskEditScreen(taskId: String?, navController: NavController, taskViewModel:
                                 tags.addAll(prevState.tags)
                             }
                         }, enabled = undoStack.size > 1) {
-                            Icon(Icons.AutoMirrored.Sharp.ArrowBack, contentDescription = "Undo")
+                            Icon(
+                                painter = painterResource(id = R.drawable.undo),
+                                contentDescription = "Undo"
+                            )
                         }
                         IconButton(onClick = {
                             if (redoStack.isNotEmpty()) {
@@ -175,7 +178,10 @@ fun TaskEditScreen(taskId: String?, navController: NavController, taskViewModel:
                                 tags.addAll(nextState.tags)
                             }
                         }, enabled = redoStack.isNotEmpty()) {
-                            Icon(Icons.AutoMirrored.Sharp.ArrowForward, contentDescription = "Redo")
+                            Icon(
+                                painter = painterResource(id = R.drawable.redo),
+                                contentDescription = "Redo"
+                            )
                         }
                         TextButton(onClick = {
                             saveChanges()
@@ -261,7 +267,10 @@ fun TaskEditScreen(taskId: String?, navController: NavController, taskViewModel:
                             redoStack.clear()
                         }
                     }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Tag")
+                        Icon(
+                            painter = painterResource(id = R.drawable.add),
+                            contentDescription = "Add Tag"
+                        )
                     }
                 }
             }
