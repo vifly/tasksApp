@@ -9,6 +9,7 @@ cargo {
     module = "../rust"
     libname = "sync"
     targets = listOf("arm64")
+    profile = "release"
 }
 
 android {
@@ -28,7 +29,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

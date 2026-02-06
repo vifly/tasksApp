@@ -1,21 +1,30 @@
 # Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# --- Debugging & Safety Rules ---
+# Disable obfuscation (renaming) to keep stack traces readable and safe for reflection.
+# R8 will still perform Tree Shaking (removing unused code) and Resource Shrinking.
+-dontobfuscate
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Keep line numbers and source file names for stack traces
+-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# --- UniFFI / Rust Binding Rules ---
+# Keep all generated UniFFI classes to prevent JNI failures.
+-keep class uniffi.sync.** { *; }
+
+# --- JNA Rules (Required by UniFFI's Android implementation) ---
+-dontwarn java.awt.*
+-keep class com.sun.jna.** { *; }
+-keep class * extends com.sun.jna.** { *; }
+
+# --- Jetpack Compose ---
+# R8 usually handles Compose well, but keep this if you see layout issues.
+-keepattributes *Annotation*
+
+# --- Data Models ---
+# Keep Task model to avoid confusion in logs/debugging, though technically not required for manual JSON parsing.
+-keep class com.example.tasks.data.Task { *; }
+
+# --- Optimization ---
+# Aggressive optimizations can sometimes break JNI. If crash, disable this.
+-optimizations !code/simplification/arithmetic,!field/*,!class/merging/*
