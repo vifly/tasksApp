@@ -1,6 +1,7 @@
 package com.example.tasks
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -23,6 +24,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
@@ -36,9 +38,7 @@ class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        // Handle result if needed
-    }
+    ) { isGranted: Boolean -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,6 +51,16 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val currentBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = currentBackStackEntry?.destination?.route
+
+                // Handle Shortcut Intent
+                LaunchedEffect(Unit) {
+                    val route = intent.getStringExtra("route")
+                    if (route == "add_task") {
+                        navController.navigate("add_task")
+                        // Clear intent to prevent re-navigation on recreation
+                        intent.removeExtra("route")
+                    }
+                }
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -136,16 +146,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        this.intent = intent
+    }
+
     private fun checkAndRequestNotificationPermission() {
-        // For Android 13+ (API 33+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val hasPermission = ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
 
-            // Ask every time if not granted. 
-            // System handles "Don't ask again" state automatically.
             if (!hasPermission) {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
