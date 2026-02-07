@@ -1,15 +1,14 @@
 package com.example.tasks.data.services
 
-import android.util.Xml
+import com.example.tasks.utils.AppLog
 import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.xmlpull.v1.XmlPullParser
-import java.io.IOException
+import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
-import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
 class WebDavClient(
@@ -26,8 +25,8 @@ class WebDavClient(
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
     private val credential = Credentials.basic(username, password)
@@ -48,10 +47,11 @@ class WebDavClient(
 
         return try {
             client.newCall(request).execute().use { response ->
+                AppLog.d("WebDAV", "Check connection: ${response.code}")
                 response.isSuccessful
             }
-        } catch (e: IOException) {
-            e.printStackTrace()
+        } catch (e: Exception) {
+            AppLog.e("WebDAV", "Connection test failed: ${e.message}")
             false
         }
     }
@@ -60,9 +60,7 @@ class WebDavClient(
      * Tries to create the directory (collection) at the server URL or relative path.
      * Checks if it exists first to avoid ambiguity with 405 errors.
      */
-
-    fun createDirectory(relativePath: String = ""): Boolean {
-
+    suspend fun createDirectory(relativePath: String = ""): Boolean {
         if (serverUrl.isBlank()) return false
 
         val url =
@@ -78,12 +76,11 @@ class WebDavClient(
 
         return try {
             client.newCall(request).execute().use { response ->
-                // 201 Created is the only definitive success for MKCOL
+                AppLog.i("WebDAV", "MKCOL ($relativePath): ${response.code}")
                 response.code == 201
             }
-
-        } catch (e: IOException) {
-            e.printStackTrace()
+        } catch (e: Exception) {
+            AppLog.e("WebDAV", "MKCOL exception: ${e.message}")
             false
         }
     }
@@ -95,10 +92,9 @@ class WebDavClient(
             .header("Depth", "0")
             .method("PROPFIND", null)
             .build()
-
         return try {
             client.newCall(request).execute().use { it.isSuccessful }
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             false
         }
     }
@@ -118,10 +114,13 @@ class WebDavClient(
 
         return try {
             client.newCall(request).execute().use { response ->
-                response.isSuccessful || response.code == 201 || response.code == 204
+                if (!response.isSuccessful) {
+                    AppLog.e("WebDAV", "PUT failed ($relativePath): ${response.code}")
+                }
+                response.isSuccessful
             }
-        } catch (e: IOException) {
-            e.printStackTrace()
+        } catch (e: Exception) {
+            AppLog.e("WebDAV", "PUT exception ($relativePath): ${e.message}")
             false
         }
     }
@@ -144,11 +143,12 @@ class WebDavClient(
                 if (response.isSuccessful) {
                     response.body?.bytes()
                 } else {
+                    AppLog.e("WebDAV", "GET failed ($relativePath): ${response.code}")
                     null
                 }
             }
-        } catch (e: IOException) {
-            e.printStackTrace()
+        } catch (e: Exception) {
+            AppLog.e("WebDAV", "GET exception ($relativePath): ${e.message}")
             null
         }
     }
@@ -170,50 +170,54 @@ class WebDavClient(
             .method("PROPFIND", null)
             .build()
 
-        return try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return emptyList()
-                val body = response.body?.string() ?: return emptyList()
-                parseWebDavXml(body)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            emptyList()
-        }
-    }
-
-    private fun parseWebDavXml(xml: String): List<String> {
         val files = mutableListOf<String>()
         try {
-            val parser = Xml.newPullParser()
-            parser.setInput(StringReader(xml))
-            var eventType = parser.eventType
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                if (eventType == XmlPullParser.START_TAG && parser.name.contains(
-                        "href",
-                        ignoreCase = true
-                    )
-                ) {
-                    val href = parser.nextText()
-                    val decoded = URLDecoder.decode(href, "UTF-8")
-                    if (decoded.endsWith(".bin", ignoreCase = true)) {
-                        val filename = decoded.substringAfterLast('/')
-                        if (filename.isNotEmpty()) {
-                            files.add(filename)
-                        }
-                    }
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    AppLog.w("WebDAV", "LIST failed: ${response.code}")
+                    return emptyList()
                 }
-                eventType = parser.next()
+                val body = response.body?.string() ?: return emptyList()
+                parsePropfindResponse(body, files)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e("WebDAV", "LIST exception: ${e.message}")
         }
         return files
     }
 
-    private fun normalizeUrl(base: String, relative: String): String {
-        val baseUrl = if (base.endsWith("/")) base else "$base/"
-        val relUrl = if (relative.startsWith("/")) relative.substring(1) else relative
-        return baseUrl + relUrl
+    private fun parsePropfindResponse(xml: String, fileList: MutableList<String>) {
+        try {
+            val factory = XmlPullParserFactory.newInstance()
+            val xpp = factory.newPullParser()
+            xpp.setInput(StringReader(xml))
+
+            var eventType = xpp.eventType
+            var currentHref = ""
+
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                if (eventType == XmlPullParser.START_TAG && xpp.name.contains(
+                        "href",
+                        ignoreCase = true
+                    )
+                ) {
+                    currentHref = xpp.nextText()
+                    val filename = currentHref.substringBeforeLast("/")
+                        .let { currentHref.substringAfterLast("/") }
+                    if (filename.isNotEmpty() && filename.endsWith(".bin")) {
+                        fileList.add(filename)
+                    }
+                }
+                eventType = xpp.next()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun normalizeUrl(baseUrl: String, path: String): String {
+        val base = baseUrl.trim().removeSuffix("/")
+        val sub = path.trim().removePrefix("/")
+        return "$base/$sub"
     }
 }

@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.example.tasks.ui.viewmodel.SettingsViewModel
 import com.example.tasks.ui.viewmodel.TaskViewModel
 import kotlinx.coroutines.flow.collectLatest
@@ -50,7 +51,11 @@ import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskViewModel) {
+fun SettingsScreen(
+    settingsViewModel: SettingsViewModel,
+    taskViewModel: TaskViewModel,
+    navController: NavController
+) {
     val homeScreenTag by settingsViewModel.homeScreenTag.collectAsState()
     var showTagDialog by rememberSaveable { mutableStateOf(false) }
     var showWebDavDialog by rememberSaveable { mutableStateOf(false) }
@@ -185,6 +190,17 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, taskViewModel: TaskView
                     .padding(16.dp)
             ) {
                 Text("导入 JSON")
+            }
+
+            HorizontalDivider()
+
+            Button(
+                onClick = { navController.navigate("debug_logs") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text("View Debug Logs")
             }
         }
     }

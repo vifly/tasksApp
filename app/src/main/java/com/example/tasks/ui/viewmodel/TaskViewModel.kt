@@ -5,8 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.tasks.data.Task
 import com.example.tasks.data.repositories.TaskRepository
-import com.example.tasks.data.services.TaskImportService
+import com.example.tasks.data.services.TaskImportExportService
 import com.example.tasks.data.sync.SyncScheduler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -24,7 +25,7 @@ import java.util.UUID
 class TaskViewModel(
     private val repository: TaskRepository,
     private val syncScheduler: SyncScheduler,
-    private val importService: TaskImportService
+    private val importExportService: TaskImportExportService
 ) : ViewModel() {
 
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
@@ -37,6 +38,7 @@ class TaskViewModel(
     val toastMessage: SharedFlow<String> = _toastMessage.asSharedFlow()
 
     private var isInteracting = false
+    private var lastMovedTaskUuid: String? = null
 
     init {
         // Load cached data immediately so UI is not empty
@@ -48,13 +50,14 @@ class TaskViewModel(
             // If initialization changed data (e.g. cleaned duplicates), signal handles refresh
         }
 
+        // React to repository changes (including background syncs!)
         repository.onDataChanged
             .onEach { if (!isInteracting) loadTasks() }
             .launchIn(viewModelScope)
     }
 
     fun loadTasks() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val list = repository.getAllTasks()
             _tasks.value = list.sortedTasks()
             _allTags.value = list.flatMap { it.tags }.distinct().sorted()
@@ -124,8 +127,6 @@ class TaskViewModel(
         }
     }
 
-    private var lastMovedTaskUuid: String? = null
-
     fun onMove(from: Int, to: Int) {
         isInteracting = true
         val list = _tasks.value.toMutableList()
@@ -175,13 +176,13 @@ class TaskViewModel(
 
     fun importTasks(jsonString: String) {
         viewModelScope.launch {
-            val count = importService.importFromJson(jsonString)
-            if (count > 0) {
-                _toastMessage.emit("成功导入 $count 个任务")
-            } else {
-                _toastMessage.emit("未导入任何任务或导入失败")
-            }
+            val count = importExportService.importFromJson(jsonString)
+            if (count > 0) _toastMessage.emit("成功导入 $count 条任务")
         }
+    }
+
+    suspend fun getExportData(): String {
+        return importExportService.exportToJson()
     }
 
     fun addTestData() {
@@ -210,12 +211,12 @@ class TaskViewModel(
 class TaskViewModelFactory(
     private val repository: TaskRepository,
     private val syncScheduler: SyncScheduler,
-    private val importService: TaskImportService
+    private val importExportService: TaskImportExportService
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TaskViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return TaskViewModel(repository, syncScheduler, importService) as T
+            return TaskViewModel(repository, syncScheduler, importExportService) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

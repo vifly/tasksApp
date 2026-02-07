@@ -8,10 +8,13 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.example.tasks.TasksApplication
+import com.example.tasks.ui.screens.DebugLogScreen
 import com.example.tasks.ui.screens.HomeScreen
 import com.example.tasks.ui.screens.SettingsScreen
 import com.example.tasks.ui.screens.TaskEditScreen
 import com.example.tasks.ui.screens.TaskListScreen
+import com.example.tasks.ui.viewmodel.DebugLogViewModel
+import com.example.tasks.ui.viewmodel.DebugLogViewModelFactory
 import com.example.tasks.ui.viewmodel.SettingsViewModel
 import com.example.tasks.ui.viewmodel.SettingsViewModelFactory
 import com.example.tasks.ui.viewmodel.TaskViewModel
@@ -23,11 +26,19 @@ fun AppNavigation(navController: NavHostController, modifier: Modifier = Modifie
     val app = context.applicationContext as TasksApplication
 
     val taskViewModel: TaskViewModel = viewModel(
-        factory = TaskViewModelFactory(app.taskRepository, app.syncScheduler, app.taskImportService)
+        factory = TaskViewModelFactory(
+            app.taskRepository,
+            app.syncScheduler,
+            app.taskImportExportService
+        )
     )
 
     val settingsViewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModelFactory(app.settingsRepository, app.syncScheduler)
+    )
+
+    val debugLogViewModel: DebugLogViewModel = viewModel(
+        factory = DebugLogViewModelFactory(app.logRepository)
     )
 
     NavHost(
@@ -49,7 +60,10 @@ fun AppNavigation(navController: NavHostController, modifier: Modifier = Modifie
             TaskEditScreen(taskId, navController, taskViewModel)
         }
         composable("settings") {
-            SettingsScreen(settingsViewModel, taskViewModel)
+            SettingsScreen(settingsViewModel, taskViewModel, navController)
+        }
+        composable("debug_logs") {
+            DebugLogScreen(navController, debugLogViewModel)
         }
     }
 }

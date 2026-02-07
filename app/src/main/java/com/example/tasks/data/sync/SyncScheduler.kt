@@ -8,13 +8,13 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.example.tasks.data.preferences.SettingsRepository
 import com.example.tasks.workers.SyncWorker
 import java.util.concurrent.TimeUnit
 
 /**
  * SyncScheduler manages the scheduling of sync tasks using WorkManager.
- * It provides a clean API for ViewModels to trigger or schedule syncs.
  */
 class SyncScheduler(
     context: Context,
@@ -25,14 +25,17 @@ class SyncScheduler(
     /**
      * Triggers a manual sync immediately.
      */
-    fun triggerNow() {
+    fun triggerNow(source: String = "ManualUI") {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
+        val inputData = workDataOf("sync_source" to source)
+
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .addTag("ManualSync")
             .setConstraints(constraints)
+            .setInputData(inputData)
             .build()
 
         workManager.enqueueUniqueWork(
@@ -51,10 +54,13 @@ class SyncScheduler(
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
+            val inputData = workDataOf("sync_source" to "PeriodicAuto")
+
             val request = PeriodicWorkRequestBuilder<SyncWorker>(
                 settingsRepository.syncIntervalMinutes, TimeUnit.MINUTES
             )
                 .setConstraints(constraints)
+                .setInputData(inputData)
                 .build()
 
             workManager.enqueueUniquePeriodicWork(

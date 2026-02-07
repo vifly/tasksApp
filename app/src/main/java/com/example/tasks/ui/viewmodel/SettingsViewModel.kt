@@ -3,8 +3,8 @@ package com.example.tasks.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.tasks.data.services.WebDavClient
 import com.example.tasks.data.preferences.SettingsRepository
+import com.example.tasks.data.services.WebDavClient
 import com.example.tasks.data.sync.SyncScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow

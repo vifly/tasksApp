@@ -1,9 +1,9 @@
 package com.example.tasks.data.repositories
 
-import android.util.Log
 import com.example.tasks.data.Task
 import com.example.tasks.data.db.TaskDataSource
 import com.example.tasks.data.serialization.TaskSerializer
+import com.example.tasks.utils.AppLog
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -16,11 +16,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * TaskRepository handles the coordination between local SQLite and Rust CRDT.
  */
-class TaskRepository(private val dataSource: TaskDataSource) {
+class TaskRepository(
+    private val dataSource: TaskDataSource
+) {
 
-    // Lazy load Rust core to avoid blocking UI thread during cold start.
     private val taskDocument by lazy { TaskDocument() }
-
     private val isInitialized = AtomicBoolean(false)
     private val dataMutex = Mutex()
 
@@ -47,27 +47,37 @@ class TaskRepository(private val dataSource: TaskDataSource) {
     suspend fun addTask(task: Task): Unit = dataMutex.withLock {
         dataSource.addTask(task)
         taskDocument.addTask(TaskSerializer.serialize(task))
+        AppLog.d("Repository", "Task added: ${task.uuid.take(8)}")
         _onDataChanged.emit(Unit)
     }
 
     suspend fun updateTask(task: Task): Unit = dataMutex.withLock {
         dataSource.updateTask(task)
         taskDocument.updateTask(task.uuid, TaskSerializer.serialize(task))
+        AppLog.d("Repository", "Task updated: ${task.uuid.take(8)}")
         _onDataChanged.emit(Unit)
     }
 
     suspend fun deleteTasks(tasks: List<Task>): Unit = dataMutex.withLock {
         dataSource.deleteTasks(tasks)
-        tasks.forEach { taskDocument.deleteTask(it.uuid) }
+        tasks.forEach {
+            taskDocument.deleteTask(it.uuid)
+            AppLog.d("Repository", "Task deleted: ${it.uuid.take(8)}")
+        }
         _onDataChanged.emit(Unit)
     }
 
     suspend fun syncRustToLocal(): Boolean = dataMutex.withLock {
-        val changed = syncRustToLocalInternal()
-        if (changed) {
+        val stats = syncRustToLocalInternal()
+        val totalChanges = stats.added + stats.updated + stats.deleted
+        if (totalChanges > 0) {
+            AppLog.i(
+                "Repository",
+                "Merged changes from Rust: +${stats.added}, ~${stats.updated}, -${stats.deleted}"
+            )
             _onDataChanged.emit(Unit)
         }
-        changed
+        totalChanges > 0
     }
 
     suspend fun getRustUpdate(): ByteArray = dataMutex.withLock {
@@ -83,9 +93,10 @@ class TaskRepository(private val dataSource: TaskDataSource) {
         val duplicates = tasks.groupBy { it.uuid }.filter { it.value.size > 1 }
         if (duplicates.isEmpty()) return false
 
-        duplicates.forEach { (_, sameUuidTasks) ->
+        duplicates.forEach { (uuid, sameUuidTasks) ->
             val sorted = sameUuidTasks.sortedByDescending { it.updatedAt.time }
             val toKeep = sorted.first()
+            AppLog.w("Repository", "Cleaning duplicate UUID: $uuid")
             dataSource.deleteTasks(sameUuidTasks)
             dataSource.addTask(toKeep)
         }
@@ -97,20 +108,24 @@ class TaskRepository(private val dataSource: TaskDataSource) {
             val jsonArray = JSONArray()
             tasks.forEach { jsonArray.put(org.json.JSONObject(TaskSerializer.serialize(it))) }
             taskDocument.restoreFromJson(jsonArray.toString())
-            Log.d("TaskRepository", "Initialized Rust document with ${tasks.size} tasks")
+            AppLog.d("Repository", "Rust engine restored with ${tasks.size} tasks")
         } catch (e: Exception) {
-            Log.e("TaskRepository", "syncLocalToRustInternal failed", e)
+            AppLog.e("Repository", "syncLocalToRustInternal failed: ${e.message}")
         }
     }
 
-    private fun syncRustToLocalInternal(): Boolean {
+    private data class SyncStats(val added: Int = 0, val updated: Int = 0, val deleted: Int = 0)
+
+    private fun syncRustToLocalInternal(): SyncStats {
+        var added = 0
+        var updated = 0
+        var deleted = 0
+
         return try {
             val jsonString = taskDocument.getAllTasksJson()
-            Log.d("TaskRepository", "Rust JSON: $jsonString")
             val jsonArray = JSONArray(jsonString)
             val currentLocalTasks = dataSource.getAllTasks().associateBy { it.uuid }
             val processedUuids = mutableSetOf<String>()
-            var changeCount = 0
 
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
@@ -124,23 +139,23 @@ class TaskRepository(private val dataSource: TaskDataSource) {
 
                 if (taskWithId.id == 0L) {
                     dataSource.addTask(taskWithId)
-                    changeCount++
+                    added++
                 } else if (hasTaskChanged(localTask!!, taskWithId)) {
                     dataSource.updateTask(taskWithId)
-                    changeCount++
+                    updated++
                 }
             }
 
             currentLocalTasks.keys.filter { it !in processedUuids }.forEach { uuid ->
                 currentLocalTasks[uuid]?.let {
                     dataSource.deleteTask(it)
-                    changeCount++
+                    deleted++
                 }
             }
-            changeCount > 0
+            SyncStats(added, updated, deleted)
         } catch (e: Exception) {
-            Log.e("TaskRepository", "syncRustToLocalInternal failed", e)
-            false
+            AppLog.e("Repository", "syncRustToLocalInternal failed: ${e.message}")
+            SyncStats()
         }
     }
 

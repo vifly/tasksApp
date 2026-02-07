@@ -25,16 +25,23 @@ class SyncWorker(
 
     override suspend fun doWork(): Result {
         val application = applicationContext as TasksApplication
-        val syncEngine = application.syncOrchestrator
+        val orchestrator = application.syncOrchestrator
 
-        Log.d("SyncWorker", "Starting sync work")
+        val source = inputData.getString("sync_source") ?: "Unknown"
+
+        application.logRepository.log(
+            Log.DEBUG,
+            "SyncWorker",
+            "Starting sync work from source: $source"
+        )
+
         notificationManager.notify(
             notificationId,
             createNotification("正在同步", "正在与 WebDAV 服务器同步数据...", true)
         )
 
         return try {
-            val result = syncEngine.performSync()
+            val result = orchestrator.performSync(source)
             if (result.isSuccess) {
                 showSuccessNotification(result.getOrNull() ?: "同步完成")
                 Result.success()
