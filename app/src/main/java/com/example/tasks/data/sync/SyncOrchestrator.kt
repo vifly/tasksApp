@@ -22,7 +22,10 @@ class SyncOrchestrator(
 
     suspend fun performSync(triggerSource: String = "Unknown"): Result<String> =
         withContext(Dispatchers.IO) {
+            logRepository.logNetworkSnapshot()
+
             logRepository.log(Log.INFO, "SyncOrch", ">>> Sync started [Source: $triggerSource]")
+
             val serverUrl = settingsRepository.serverUrl
             val username = settingsRepository.username
             val password = settingsRepository.password

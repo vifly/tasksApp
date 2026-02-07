@@ -3,6 +3,7 @@ package com.example.tasks.data.repositories
 import android.content.Context
 import android.util.Log
 import com.example.tasks.data.preferences.SyncMetadataRepository
+import com.example.tasks.utils.NetworkUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +24,7 @@ class LogRepository(
     context: Context,
     private val metadataRepository: SyncMetadataRepository
 ) {
+    private val appContext = context.applicationContext
     private val logFile = File(context.filesDir, "debug_logs.txt")
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
     private val logcatTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
@@ -31,7 +33,6 @@ class LogRepository(
     private val logChannel = Channel<String>(capacity = 500)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // To track pending writes for flushing
     private val pendingCount = AtomicInteger(0)
 
     init {
@@ -53,16 +54,19 @@ class LogRepository(
         val entry = "$timestamp $levelStr/$tag: $message"
 
         pendingCount.incrementAndGet()
-        // Ensure log is queued
         scope.launch {
             logChannel.send(entry)
         }
     }
 
     /**
-     * Ensures all queued logs are physically written to the file.
-     * Essential for background tasks (WorkManager) before the process dies.
+     * Captures and logs the current network environment.
      */
+    fun logNetworkSnapshot() {
+        val snapshot = NetworkUtils.getNetworkSnapshot(appContext)
+        log(Log.INFO, "Network", "Current State: $snapshot")
+    }
+
     suspend fun flush() {
         withTimeoutOrNull(5000) { // 5s safety timeout
             while (pendingCount.get() > 0) {
@@ -126,11 +130,7 @@ class LogRepository(
     }
 
     suspend fun getPersistentLogs(): List<String> = withContext(Dispatchers.IO) {
-        if (logFile.exists()) {
-            logFile.readLines()
-        } else {
-            emptyList()
-        }
+        if (logFile.exists()) logFile.readLines() else emptyList()
     }
 
     suspend fun clearLogs() = withContext(Dispatchers.IO) {

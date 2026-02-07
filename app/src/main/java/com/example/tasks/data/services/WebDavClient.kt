@@ -1,6 +1,7 @@
 package com.example.tasks.data.services
 
 import com.example.tasks.utils.AppLog
+import com.example.tasks.utils.NetworkUtils
 import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -38,6 +39,11 @@ class WebDavClient(
     fun checkConnection(): Boolean {
         if (serverUrl.isBlank()) return false
 
+        if (!NetworkUtils.isServerReachable(serverUrl)) {
+            AppLog.w("WebDAV", "Connection check: Server port unreachable")
+            return false
+        }
+
         val request = Request.Builder()
             .url(serverUrl)
             .header("Authorization", credential)
@@ -47,11 +53,11 @@ class WebDavClient(
 
         return try {
             client.newCall(request).execute().use { response ->
-                AppLog.d("WebDAV", "Check connection: ${response.code}")
+                AppLog.d("WebDAV", "Connection check: HTTP ${response.code}")
                 response.isSuccessful
             }
         } catch (e: Exception) {
-            AppLog.e("WebDAV", "Connection test failed: ${e.message}")
+            AppLog.e("WebDAV", "Connection check failed: ${e.message}")
             false
         }
     }
