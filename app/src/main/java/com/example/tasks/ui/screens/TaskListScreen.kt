@@ -482,6 +482,8 @@ fun TaskDetailsDialog(task: Task, onDismiss: () -> Unit) {
         text = {
             Column {
                 Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "Tags: ${task.tags.joinToString(", ")}")
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(text = "Created: ${dateFormat.format(task.createdAt)}")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(text = "Last Updated: ${dateFormat.format(task.updatedAt)}")
