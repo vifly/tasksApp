@@ -24,7 +24,7 @@ class TaskDataSource(context: Context) {
                     createdAt = Date(getLong(getColumnIndexOrThrow("created_at"))),
                     updatedAt = Date(getLong(getColumnIndexOrThrow("updated_at"))),
                     isPinned = getInt(getColumnIndexOrThrow("is_pinned")) == 1,
-                    customSortOrder = getInt(getColumnIndexOrThrow("custom_sort_order"))
+                    customSortOrder = getLong(getColumnIndexOrThrow("custom_sort_order"))
                 )
                 tasks.add(task)
             }

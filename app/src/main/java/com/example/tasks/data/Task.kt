@@ -11,5 +11,5 @@ data class Task(
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),
     val isPinned: Boolean = false,
-    val customSortOrder: Int = 0
+    val customSortOrder: Long = 0L
 )

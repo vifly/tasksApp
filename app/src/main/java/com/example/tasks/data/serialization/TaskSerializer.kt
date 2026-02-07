@@ -34,7 +34,7 @@ object TaskSerializer {
             tags = json.optJSONArray("tags")?.let { arr ->
                 (0 until arr.length()).map { arr.getString(it) }
             } ?: emptyList(),
-            customSortOrder = json.optInt("custom_sort_order", 0)
+            customSortOrder = json.optLong("custom_sort_order", 0L)
         )
     }
 }

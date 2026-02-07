@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+/**
+ * TaskViewModel manages the UI state for the task list.
+ * Uses a "Floating Weight" (customSortOrder) algorithm for efficient O(1) reordering.
+ */
 class TaskViewModel(
     private val repository: TaskRepository,
     private val syncScheduler: SyncScheduler,
@@ -52,7 +56,7 @@ class TaskViewModel(
     fun loadTasks() {
         viewModelScope.launch {
             val list = repository.getAllTasks()
-            _tasks.value = list.distinctBy { it.uuid }.sortedTasks()
+            _tasks.value = list.sortedTasks()
             _allTags.value = list.flatMap { it.tags }.distinct().sorted()
         }
     }
@@ -65,12 +69,19 @@ class TaskViewModel(
     }
 
     private fun List<Task>.sortedTasks(): List<Task> {
-        return this.sortedWith(compareByDescending<Task> { it.isPinned }.thenByDescending { it.customSortOrder }
-            .thenByDescending { it.createdAt })
+        return this.sortedWith(
+            compareByDescending<Task> { it.isPinned }
+                .thenByDescending { it.customSortOrder }
+                .thenByDescending { it.createdAt }
+        )
     }
 
     fun addTask(task: Task) {
-        viewModelScope.launch { repository.addTask(task) }
+        viewModelScope.launch {
+            // New tasks default to highest weight so they appear at top
+            val newTask = task.copy(customSortOrder = System.currentTimeMillis())
+            repository.addTask(newTask)
+        }
     }
 
     fun updateTask(task: Task) {
@@ -83,39 +94,82 @@ class TaskViewModel(
 
     fun togglePin(task: Task) {
         viewModelScope.launch {
-            val isPinningNewTask = !task.isPinned
-            if (isPinningNewTask) {
+            val becomingPinned = !task.isPinned
+
+            if (becomingPinned) {
+                // Pinning: Unpin existing (if any) and set high weight
                 tasks.value.find { it.isPinned && it.uuid != task.uuid }?.let {
-                    repository.updateTask(it.copy(isPinned = false))
+                    repository.updateTask(
+                        it.copy(
+                            isPinned = false,
+                            customSortOrder = System.currentTimeMillis()
+                        )
+                    )
                 }
+                repository.updateTask(
+                    task.copy(
+                        isPinned = true,
+                        customSortOrder = System.currentTimeMillis()
+                    )
+                )
+            } else {
+                // Unpinning: Set current time as weight so it stays at the top of unpinned list
+                repository.updateTask(
+                    task.copy(
+                        isPinned = false,
+                        customSortOrder = System.currentTimeMillis()
+                    )
+                )
             }
-            repository.updateTask(task.copy(isPinned = !task.isPinned))
         }
     }
 
+    private var lastMovedTaskUuid: String? = null
+
     fun onMove(from: Int, to: Int) {
         isInteracting = true
-        val updatedTasks = _tasks.value.toMutableList()
-        if (from in updatedTasks.indices && to in updatedTasks.indices) {
-            if (updatedTasks[from].isPinned || updatedTasks[to].isPinned) return
-            updatedTasks.add(to, updatedTasks.removeAt(from))
-            _tasks.value = updatedTasks
+        val list = _tasks.value.toMutableList()
+        if (from in list.indices && to in list.indices) {
+            // Don't allow moving pinned tasks OR moving items into/out of pinned zone
+            if (list[from].isPinned || list[to].isPinned) return
+
+            val movedItem = list.removeAt(from)
+            list.add(to, movedItem)
+            lastMovedTaskUuid = movedItem.uuid
+            _tasks.value = list
         }
     }
 
     fun onDragEnd() {
-        viewModelScope.launch {
-            val updatedTasks = _tasks.value
-            val total = updatedTasks.size
-            // Update sort order for all tasks to match current list order
-            updatedTasks.forEachIndexed { index, task ->
-                val newSortOrder = total - index
-                if (task.customSortOrder != newSortOrder) {
-                    repository.updateTask(task.copy(customSortOrder = newSortOrder))
-                }
+        val uuid = lastMovedTaskUuid ?: return
+        val currentList = _tasks.value
+        val index = currentList.indexOfFirst { it.uuid == uuid }
+
+        if (index != -1) {
+            val movedTask = currentList[index]
+            val newOrder = calculateFloatingOrder(index, currentList)
+
+            viewModelScope.launch {
+                repository.updateTask(movedTask.copy(customSortOrder = newOrder))
+                lastMovedTaskUuid = null
+                isInteracting = false
             }
+        } else {
             isInteracting = false
-            loadTasks()
+        }
+    }
+
+    private fun calculateFloatingOrder(index: Int, list: List<Task>): Long {
+        val step = 1000000L
+
+        val prev = if (index > 0 && !list[index - 1].isPinned) list[index - 1] else null
+        val next = if (index < list.size - 1) list[index + 1] else null
+
+        return when {
+            prev != null && next != null -> (prev.customSortOrder + next.customSortOrder) / 2
+            prev == null && next != null -> next.customSortOrder + step
+            prev != null && next == null -> prev.customSortOrder - step
+            else -> System.currentTimeMillis()
         }
     }
 
@@ -132,11 +186,13 @@ class TaskViewModel(
 
     fun addTestData() {
         viewModelScope.launch {
+            val baseOrder = System.currentTimeMillis()
             for (i in 1..5) {
                 repository.addTask(
                     Task(
                         content = "Test task ${UUID.randomUUID()}",
-                        tags = listOf("test")
+                        tags = listOf("test"),
+                        customSortOrder = baseOrder + i
                     )
                 )
             }
