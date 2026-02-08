@@ -55,7 +55,7 @@ class TaskDataSource(context: Context) {
         val values = ContentValues().apply {
             put("content", task.content)
             put("tags", task.tags.joinToString(","))
-            put("updated_at", Date().time)
+            put("updated_at", task.updatedAt.time)
             put("is_pinned", if (task.isPinned) 1 else 0)
             put("custom_sort_order", task.customSortOrder)
         }

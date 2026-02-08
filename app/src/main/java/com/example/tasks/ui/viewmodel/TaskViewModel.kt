@@ -154,6 +154,9 @@ class TaskViewModel(
                 repository.updateTask(movedTask.copy(customSortOrder = newOrder))
                 lastMovedTaskUuid = null
                 isInteracting = false
+                // Force refresh to get the updated timestamp from DB, 
+                // because the signal during updateTask was ignored due to isInteracting=true
+                loadTasks()
             }
         } else {
             isInteracting = false

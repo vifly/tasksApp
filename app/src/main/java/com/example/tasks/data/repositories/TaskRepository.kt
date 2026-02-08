@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import uniffi.sync.TaskDocument
+import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -31,6 +32,9 @@ class TaskRepository(
         if (isInitialized.compareAndSet(false, true)) {
             dataMutex.withLock {
                 cleanUpDuplicatesInternal()
+
+                checkAndRebalanceWeightsInternal()
+
                 val tasks = dataSource.getAllTasks()
                 if (tasks.isNotEmpty()) {
                     syncLocalToRustInternal(tasks)
@@ -103,6 +107,42 @@ class TaskRepository(
         return true
     }
 
+    private fun checkAndRebalanceWeightsInternal() {
+        val tasks = dataSource.getAllTasks()
+        val weights = tasks.map { it.customSortOrder }
+        val hasZero = weights.any { it == 0L }
+        val hasDuplicates = weights.size != weights.distinct().size
+
+        if (hasZero || hasDuplicates) {
+            AppLog.w("Repository", "Rebalancing weights: Zero=$hasZero, Duplicates=$hasDuplicates")
+
+            // Sort by current weight (descending) to preserve relative order where possible.
+            // Fallback to update time if weights are identical (e.g. all 0).
+            val sortedTasks = tasks.sortedWith(
+                compareByDescending<Task> { it.isPinned }
+                    .thenByDescending { it.customSortOrder }
+                    .thenByDescending { it.updatedAt }
+            )
+
+            val baseTime = System.currentTimeMillis()
+            val step = 1_000_000L
+            val now = Date()
+
+            sortedTasks.forEachIndexed { index, task ->
+                // New weight: Decreasing from baseTime, with large gaps
+                val newWeight = baseTime - (index * step)
+                if (task.customSortOrder != newWeight) {
+                    val rebalancedTask = task.copy(
+                        customSortOrder = newWeight,
+                        updatedAt = now // Must update timestamp to propagate change!
+                    )
+                    dataSource.updateTask(rebalancedTask)
+                }
+            }
+            AppLog.i("Repository", "Rebalanced ${sortedTasks.size} tasks successfully")
+        }
+    }
+
     private fun syncLocalToRustInternal(tasks: List<Task>) {
         try {
             val jsonArray = JSONArray()
@@ -163,6 +203,8 @@ class TaskRepository(
         return local.content != remote.content ||
                 local.isPinned != remote.isPinned ||
                 local.tags != remote.tags ||
-                local.customSortOrder != remote.customSortOrder
+                local.customSortOrder != remote.customSortOrder ||
+                local.updatedAt.time != remote.updatedAt.time ||
+                local.createdAt.time != remote.createdAt.time
     }
 }

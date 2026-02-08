@@ -15,6 +15,7 @@ pub struct TaskEntry {
     pub created_at: i64,
     pub updated_at: i64,
     pub tags: Vec<String>,
+    pub custom_sort_order: i64,
 }
 
 #[derive(uniffi::Object)]
@@ -77,6 +78,7 @@ impl TaskDocument {
 
                 let created_at = Self::get_i64_from_any(map.get("created_at"));
                 let updated_at = Self::get_i64_from_any(map.get("updated_at"));
+                let custom_sort_order = Self::get_i64_from_any(map.get("custom_sort_order"));
 
                 let mut tags_vec = Vec::new();
                 if let Some(Any::Array(tags_array)) = map.get("tags") {
@@ -94,6 +96,7 @@ impl TaskDocument {
                     created_at,
                     updated_at,
                     tags: tags_vec,
+                    custom_sort_order,
                 });
             }
         }
@@ -198,6 +201,10 @@ impl TaskDocument {
         map.insert("is_pinned".to_string(), Any::Bool(task.is_pinned));
         map.insert("created_at".to_string(), Any::BigInt(task.created_at));
         map.insert("updated_at".to_string(), Any::BigInt(task.updated_at));
+        map.insert(
+            "custom_sort_order".to_string(),
+            Any::BigInt(task.custom_sort_order),
+        );
 
         let mut tags_vec = Vec::new();
         for tag in task.tags {
@@ -261,6 +268,7 @@ mod tests {
             created_at: 100,
             updated_at: 100,
             tags: vec!["a".to_string()],
+            custom_sort_order: 500,
         };
         doc.add_task(serde_json::to_string(&task1).unwrap());
 
@@ -269,10 +277,12 @@ mod tests {
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].uuid, "u1");
         assert_eq!(tasks[0].tags[0], "a");
+        assert_eq!(tasks[0].custom_sort_order, 500);
 
         let task1_update = TaskEntry {
             content: "Task 1 Updated".to_string(),
             updated_at: 200,
+            custom_sort_order: 1000,
             ..task1.clone()
         };
         doc.update_task(
@@ -284,6 +294,7 @@ mod tests {
         let tasks: Vec<TaskEntry> = serde_json::from_str(&json).unwrap();
         assert_eq!(tasks[0].content, "Task 1 Updated");
         assert_eq!(tasks[0].updated_at, 200);
+        assert_eq!(tasks[0].custom_sort_order, 1000);
 
         doc.delete_task("u1".to_string());
         let json = doc.get_all_tasks_json();
