@@ -30,17 +30,7 @@ class TaskRepository(
 
     suspend fun initialize() {
         if (isInitialized.compareAndSet(false, true)) {
-            dataMutex.withLock {
-                cleanUpDuplicatesInternal()
-
-                checkAndRebalanceWeightsInternal()
-
-                val tasks = dataSource.getAllTasks()
-                if (tasks.isNotEmpty()) {
-                    syncLocalToRustInternal(tasks)
-                }
-                _onDataChanged.emit(Unit)
-            }
+            validateAndRepairData()
         }
     }
 
@@ -69,6 +59,21 @@ class TaskRepository(
             AppLog.d("Repository", "Task deleted: ${it.uuid.take(8)}")
         }
         _onDataChanged.emit(Unit)
+    }
+
+    /**
+     * Scans database for inconsistencies (duplicate UUIDs, corrupted sort weights)
+     * and performs automatic repair. Synchronizes changes to the Rust engine.
+     */
+    suspend fun validateAndRepairData() = dataMutex.withLock {
+        val cleaned = cleanUpDuplicatesInternal()
+        val rebalanced = checkAndRebalanceWeightsInternal()
+
+        if (cleaned || rebalanced) {
+            // Data structure changed, force sync state to Rust engine
+            syncLocalToRustInternal(dataSource.getAllTasks())
+            _onDataChanged.emit(Unit)
+        }
     }
 
     suspend fun syncRustToLocal(): Boolean = dataMutex.withLock {
@@ -107,7 +112,7 @@ class TaskRepository(
         return true
     }
 
-    private fun checkAndRebalanceWeightsInternal() {
+    private fun checkAndRebalanceWeightsInternal(): Boolean {
         val tasks = dataSource.getAllTasks()
         val weights = tasks.map { it.customSortOrder }
         val hasZero = weights.any { it == 0L }
@@ -140,7 +145,9 @@ class TaskRepository(
                 }
             }
             AppLog.i("Repository", "Rebalanced ${sortedTasks.size} tasks successfully")
+            return true
         }
+        return false
     }
 
     private fun syncLocalToRustInternal(tasks: List<Task>) {
@@ -148,7 +155,7 @@ class TaskRepository(
             val jsonArray = JSONArray()
             tasks.forEach { jsonArray.put(org.json.JSONObject(TaskSerializer.serialize(it))) }
             taskDocument.restoreFromJson(jsonArray.toString())
-            AppLog.d("Repository", "Rust engine restored with ${tasks.size} tasks")
+            AppLog.d("Repository", "Rust engine refreshed with ${tasks.size} tasks")
         } catch (e: Exception) {
             AppLog.e("Repository", "syncLocalToRustInternal failed: ${e.message}")
         }

@@ -37,6 +37,10 @@ class TaskImportExportService(
                     )
                 }
             }
+
+            // Trigger health check to fix any corrupted metadata or duplicates in imported data
+            repository.validateAndRepairData()
+
             logRepository.log(
                 Log.INFO,
                 "ImportExport",
