@@ -23,8 +23,11 @@ class SyncOrchestrator(
     suspend fun performSync(triggerSource: String = "Unknown"): Result<String> =
         withContext(Dispatchers.IO) {
             logRepository.logNetworkSnapshot()
-
             logRepository.log(Log.INFO, "SyncOrch", ">>> Sync started [Source: $triggerSource]")
+
+            // Ensure Rust engine is initialized and populated with local data
+            // BEFORE generating updates or merging. Prevents data loss on cold start.
+            taskRepository.initialize()
 
             val serverUrl = settingsRepository.serverUrl
             val username = settingsRepository.username
