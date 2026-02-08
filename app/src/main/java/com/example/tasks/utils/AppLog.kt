@@ -29,10 +29,9 @@ object AppLog {
     private fun log(priority: Int, tag: String, msg: String) {
         val repo = repository
         if (repo != null) {
-            // Repository will handle both Logcat and File
             repo.log(priority, tag, msg)
         } else {
-            // Fallback to Logcat only if repo is not yet initialized
+            // Fallback if not initialized
             Log.println(priority, tag, msg)
         }
     }

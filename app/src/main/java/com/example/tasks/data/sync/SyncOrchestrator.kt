@@ -104,14 +104,10 @@ class SyncOrchestrator(
                 syncMetadataRepository.lastSyncTime = System.currentTimeMillis()
                 logRepository.log(Log.INFO, "SyncOrch", "<<< Sync completed successfully")
 
-                // Scrap Rust logs from system buffer after sync
-                logRepository.flushRustLogs()
-
                 Result.success("同步成功")
 
             } catch (e: Exception) {
                 logRepository.log(Log.ERROR, "SyncOrch", "FATAL: Sync crashed: ${e.message}")
-                logRepository.flushRustLogs()
                 Result.failure(e)
             } finally {
                 // CRITICAL: Ensure all logs (including Rust logs just flushed) are written to disk

@@ -30,8 +30,4 @@ class SyncMetadataRepository(context: Context) {
     var processedFiles: Set<String>
         get() = prefs.getStringSet("processed_files", emptySet()) ?: emptySet()
         set(value) = prefs.edit { putStringSet("processed_files", value) }
-
-    var lastLogFetchTime: Long
-        get() = prefs.getLong("last_log_fetch_time", 0L)
-        set(value) = prefs.edit { putLong("last_log_fetch_time", value) }
 }

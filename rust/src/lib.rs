@@ -7,6 +7,43 @@ use yrs::{Any, Array, ArrayRef, Doc, Out, ReadTxn, StateVector, Transact, Update
 
 uniffi::setup_scaffolding!();
 
+#[uniffi::export(callback_interface)]
+pub trait Logger: Send + Sync {
+    fn log(&self, level: i32, tag: String, msg: String);
+}
+
+struct ProxyLogger {
+    callback: Box<dyn Logger>,
+}
+
+impl log::Log for ProxyLogger {
+    fn enabled(&self, _metadata: &log::Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record) {
+        let level = match record.level() {
+            log::Level::Error => 6, // ANDROID_LOG_ERROR
+            log::Level::Warn => 5,  // ANDROID_LOG_WARN
+            log::Level::Info => 4,  // ANDROID_LOG_INFO
+            log::Level::Debug => 3, // ANDROID_LOG_DEBUG
+            log::Level::Trace => 2, // ANDROID_LOG_VERBOSE
+        };
+        self.callback
+            .log(level, "RustSync".to_string(), format!("{}", record.args()));
+    }
+
+    fn flush(&self) {}
+}
+
+#[uniffi::export]
+pub fn init_logger(callback: Box<dyn Logger>) {
+    let logger = ProxyLogger { callback };
+    let static_logger = Box::leak(Box::new(logger));
+    let _ = log::set_logger(static_logger);
+    log::set_max_level(log::LevelFilter::Debug);
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TaskEntry {
     pub uuid: String,
@@ -28,16 +65,6 @@ pub struct TaskDocument {
 impl TaskDocument {
     #[uniffi::constructor]
     pub fn new() -> Self {
-        #[cfg(target_os = "android")]
-        {
-            android_logger::init_once(
-                android_logger::Config::default()
-                    .with_tag("RustSync")
-                    .with_max_level(log::LevelFilter::Debug),
-            );
-        }
-        info!("TaskDocument initialized");
-
         let doc = Doc::new();
         let tasks_array = doc.get_or_insert_array("tasks");
         Self { doc, tasks_array }
@@ -48,7 +75,6 @@ impl TaskDocument {
         let mut tasks = Vec::new();
 
         for value in self.tasks_array.iter(&txn) {
-            // Support both YMap (if we ever figure it out) and Any::Map
             if let Out::Any(Any::Map(map)) = value {
                 let uuid = map
                     .get("uuid")
@@ -122,26 +148,20 @@ impl TaskDocument {
     }
 
     pub fn add_task(&self, json: String) {
-        match serde_json::from_str::<TaskEntry>(&json) {
-            Ok(task) => {
-                let uuid = task.uuid.clone();
-                let mut txn = self.doc.transact_mut();
+        if let Ok(task) = serde_json::from_str::<TaskEntry>(&json) {
+            let uuid = task.uuid.clone();
+            let mut txn = self.doc.transact_mut();
 
-                // Check if task with this UUID already exists
-                if let Some((index, _)) = self.find_task_index_by_uuid(&txn, &uuid) {
-                    info!("add_task: UUID {} already exists, treating as update", uuid);
-                    // Remove old and insert new at the same index to update
-                    self.tasks_array.remove(&mut txn, index);
-                    let any_task = Self::task_to_any(task);
-                    self.tasks_array.insert(&mut txn, index, any_task);
-                } else {
-                    // Insert new at the beginning
-                    Self::insert_task_internal(&mut txn, &self.tasks_array, 0, task);
-                    debug!("add_task success for {}", uuid);
-                }
-            }
-            Err(e) => {
-                error!("add_task failed to parse JSON: {}", e);
+            if let Some((index, _)) = self.find_task_index_by_uuid(&txn, &uuid) {
+                info!("add_task: UUID {} already exists, treating as update", uuid);
+                // Remove old and insert new at the same index to update
+                self.tasks_array.remove(&mut txn, index);
+                let any_task = Self::task_to_any(task);
+                self.tasks_array.insert(&mut txn, index, any_task);
+            } else {
+                // Insert new at the beginning
+                Self::insert_task_internal(&mut txn, &self.tasks_array, 0, task);
+                debug!("add_task success for {}", uuid);
             }
         }
     }
@@ -257,8 +277,14 @@ impl TaskDocument {
 mod tests {
     use super::*;
 
+    struct MockLogger;
+    impl Logger for MockLogger {
+        fn log(&self, _level: i32, _tag: String, _msg: String) {}
+    }
+
     #[test]
     fn test_task_crud() {
+        // init_logger(Box::new(MockLogger)); // Optional for tests
         let doc = TaskDocument::new();
 
         let task1 = TaskEntry {
