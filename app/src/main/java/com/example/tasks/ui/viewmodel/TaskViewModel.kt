@@ -11,10 +11,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -36,6 +38,9 @@ class TaskViewModel(
 
     private val _toastMessage = MutableSharedFlow<String>()
     val toastMessage: SharedFlow<String> = _toastMessage.asSharedFlow()
+
+    val isSyncing: StateFlow<Boolean> = syncScheduler.isSyncing
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private var isInteracting = false
     private var lastMovedTaskUuid: String? = null
@@ -191,12 +196,13 @@ class TaskViewModel(
     fun addTestData() {
         viewModelScope.launch {
             val baseOrder = System.currentTimeMillis()
+            val step = 1_000_000L
             for (i in 1..5) {
                 repository.addTask(
                     Task(
                         content = "Test task ${UUID.randomUUID()}",
                         tags = listOf("test"),
-                        customSortOrder = baseOrder + i
+                        customSortOrder = baseOrder + (i * step)
                     )
                 )
             }

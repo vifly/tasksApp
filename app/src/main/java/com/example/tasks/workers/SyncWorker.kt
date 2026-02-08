@@ -35,15 +35,9 @@ class SyncWorker(
             "Starting sync work from source: $source"
         )
 
-        notificationManager.notify(
-            notificationId,
-            createNotification("正在同步", "正在与 WebDAV 服务器同步数据...", true)
-        )
-
         return try {
             val result = orchestrator.performSync(source)
             if (result.isSuccess) {
-                showSuccessNotification(result.getOrNull() ?: "同步完成")
                 Result.success()
             } else {
                 val errorMsg = result.exceptionOrNull()?.message ?: "未知错误"
@@ -56,7 +50,7 @@ class SyncWorker(
         }
     }
 
-    private fun createNotification(title: String, text: String, ongoing: Boolean): Notification {
+    private fun createNotification(title: String, text: String): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
@@ -70,18 +64,12 @@ class SyncWorker(
             .setContentTitle(title)
             .setContentText(text)
             .setSmallIcon(R.mipmap.ic_launcher_round)
-            .setOngoing(ongoing)
-            .setAutoCancel(!ongoing)
+            .setAutoCancel(true)
             .build()
     }
 
-    private fun showSuccessNotification(message: String) {
-        val notification = createNotification("同步成功", message, false)
-        notificationManager.notify(notificationId, notification)
-    }
-
     private fun showFailureNotification(error: String) {
-        val notification = createNotification("同步失败", "点击查看详情: $error", false)
+        val notification = createNotification("同步失败", "点击查看详情: $error")
         notificationManager.notify(notificationId, notification)
     }
 }

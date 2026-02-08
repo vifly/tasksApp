@@ -2,10 +2,16 @@ package com.example.tasks.ui.screens
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -50,6 +56,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -91,6 +98,8 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
 
     val tasks by taskViewModel.tasks.collectAsState()
     val allTags by taskViewModel.allTags.collectAsState()
+    val isSyncing by taskViewModel.isSyncing.collectAsState()
+
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf<List<Task>?>(null) }
     var showDetailsDialog by remember { mutableStateOf<Task?>(null) }
@@ -125,6 +134,17 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
         }
     }
 
+    val infiniteTransition = rememberInfiniteTransition(label = "SyncRotation")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+
     Scaffold(
         topBar = {
             if (isSelectionMode) {
@@ -151,10 +171,14 @@ fun TaskListScreen(navController: NavController, taskViewModel: TaskViewModel) {
                 TopAppBar(
                     title = { Text("Tasks") },
                     actions = {
-                        IconButton(onClick = { taskViewModel.sync() }) {
+                        IconButton(
+                            onClick = { taskViewModel.sync() },
+                            enabled = !isSyncing
+                        ) {
                             Icon(
-                                painter = painterResource(id = R.drawable.sync),
-                                contentDescription = "Sync"
+                                painter = painterResource(id = R.drawable.autorenew),
+                                contentDescription = "Sync",
+                                modifier = Modifier.rotate(if (isSyncing) rotation else 0f)
                             )
                         }
                     }
